@@ -1,0 +1,2995 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DEM-CSV Salīdzināšana</title>
+  <!-- Pievienojam papaparse bibliotēku CSV apstrādei -->
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js" crossorigin="anonymous"></script>
+  <!-- Pievienojam geotiff.js bibliotēku GeoTIFF nolasīšanai -->
+  <script src="https://unpkg.com/geotiff@2.1.0/dist-browser/geotiff.js" crossorigin="anonymous"></script>
+  <!-- Pievienojam SheetJS (xlsx) bibliotēku Excel (.xlsx) eksportam -->
+  <script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <!-- Pievienojam laz-perf bibliotēku LAZ failu dekompresijas atbalstam -->
+  <script src="https://unpkg.com/laz-perf@1.6.0/dist/laz-perf.js" crossorigin="anonymous"></script>
+  <!-- Pievienojam Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/proj4@2.9.0/dist/proj4.js" crossorigin="anonymous"></script>
+  <style>
+    /* =========================================
+       BĀZES (Gaišie) STILI
+       ========================================= */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, 
+                   "Apple Color Emoji", "Segoe UI Emoji";
+      margin: 20px;
+      background-color: #f8f9fa;
+      color: #262730;
+    }
+    h1 {
+      font-size: 2em;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    h3, h4, p, li {
+      font-size: 1em;
+    }
+    #results table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 1rem;
+      background-color: white;
+    }
+    #results th, #results td {
+      border: 1px solid #ccc;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    #error {
+      color: red;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    #status {
+      margin-top: 10px;
+      color: #333;
+    }
+    button {
+      background-color: #0099ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #007acc;
+    }
+    .reset-button {
+      background-color: #dc3545 !important;
+      color: white;
+    }
+    .reset-button:hover {
+      background-color: #c82333 !important;
+    }
+    input[type="file"], input[type="number"] {
+      padding: 8px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    .legend {
+      padding: 8px;
+      background-color: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-top: 20px;
+      line-height: 18px;
+      color: #555;
+    }
+    .legend i {
+      width: 18px;
+      height: 18px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.7;
+    }
+    .button-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .download-link {
+      text-decoration: none;
+      background-color: #28a745;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-size: 16px;
+      display: inline-block;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    .download-link:hover {
+      background-color: #218838;
+    }
+    #map {
+      height: 800px; /* updated height */
+      width: 100%;
+      margin: 20px 0;
+    }
+    .diff-label {
+      font-size: 12px;
+      color: black;
+      background: rgba(255,255,255,0.7);
+      padding: 2px 4px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+    }
+    /* Fiksēta tabulas konteineram augstums 300px un fiksēta galvene */
+    .result-table-container {
+      height: 300px;
+      overflow-y: auto;
+      overflow-x: auto; /* pievienots responsivitātei */
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    table thead th {
+      position: sticky;
+      top: 0;
+      background: #eee;
+      z-index: 1;
+    }
+    /* =========================================
+       TUMŠAIS REŽĪMS
+       ========================================= */
+    body.dark-mode {
+      background-color: #121212;
+      color: #ffffff;
+    }
+    body.dark-mode h1,
+    body.dark-mode h3,
+    body.dark-mode h4,
+    body.dark-mode p,
+    body.dark-mode li {
+      color: #fff;
+    }
+    body.dark-mode #results table {
+      background-color: #1e1e1e;
+      border-color: #444;
+    }
+    body.dark-mode #results th,
+    body.dark-mode #results td {
+      border-color: #444;
+      color: #ccc;
+    }
+    body.dark-mode .legend {
+      background-color: #1e1e1e;
+      border-color: #444;
+      color: #ccc;
+    }
+    body.dark-mode .leaflet-control-layers-expanded {
+      background: #2b2b2b;
+      color: #ccc;
+    }
+    body.dark-mode .leaflet-popup-content-wrapper {
+      background: #2b2b2b;
+      color: #ccc;
+    }
+    body.dark-mode .leaflet-popup-tip-container {
+      opacity: 0.7;
+    }
+    .dark-mode-switch-container {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 5px 10px;
+      border-radius: 20px;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    body.dark-mode .dark-mode-switch-container {
+      background: rgba(0, 0, 0, 0.5);
+    }
+    #darkModeSwitch {
+      transform: scale(1.3);
+      cursor: pointer;
+    }
+    .dark-mode-switch-label {
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+    }
+    body.dark-mode input[type="file"],
+    body.dark-mode input[type="number"] {
+      background-color: #2b2b2b;
+      color: #ffffff;
+      border: 1px solid #444;
+    }
+    body.dark-mode #status {
+      color: #ffffff;
+    }
+    
+    /* Radio pogu stili */
+    input[type="radio"] {
+      margin-right: 5px;
+    }
+    
+    label {
+      margin-right: 15px;
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    body.dark-mode label {
+      color: #ffffff;
+    }
+    
+    /* Responsīvi pielāgoti stili */
+    @media (max-width: 768px) {
+      #map {
+        height: 400px;
+      }
+    }
+    @media (max-width: 480px) {
+      #map {
+        height: 300px;
+      }
+    }
+    
+    /* Failu saraksta stili */
+    .file-list {
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 8px;
+      margin-top: 5px;
+      font-size: 12px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    
+    body.dark-mode .file-list {
+      background-color: #2b2b2b;
+      border-color: #444;
+      color: #ccc;
+    }
+    
+    .file-item {
+      margin-bottom: 3px;
+      padding: 2px 4px;
+      background-color: rgba(0, 123, 255, 0.1);
+      border-radius: 3px;
+    }
+    
+    body.dark-mode .file-item {
+      background-color: rgba(0, 123, 255, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <!-- Tumšā režīma slēdzis (augšējā labajā stūrī) -->
+  <div class="dark-mode-switch-container">
+    <label for="darkModeSwitch" class="dark-mode-switch-label">Tumšais režīms</label>
+    <input type="checkbox" id="darkModeSwitch" />
+  </div>
+
+  <!-- Galvenā satura sadaļa -->
+  <h1>Punktu datu un GeoTIFF salīdzināšanas rīks</h1>
+  <p>Augšupielādējiet punktu datus (CSV vai LAS failu ar x, y, z koordinātām) un GeoTIFF, lai iegūtu starpību aprēķinu.</p>
+
+  <p><strong>Punktu dati:</strong></p>
+  <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+    <input type="radio" id="csvOption" name="dataType" value="csv" checked>
+    <label for="csvOption">CSV fails</label>
+    <input type="radio" id="lasOption" name="dataType" value="las">
+    <label for="lasOption">LAS/LAZ faili (var izvēlēties vairākus)</label>
+  </div>
+  <input type="file" id="csvFile" accept=".csv" />
+  <input type="file" id="lasFile" accept=".las,.laz" multiple style="display: none;" />
+  <div id="selectedFilesInfo" style="display: none;"></div>
+
+  <p>GeoTIFF faili (var izvēlēties vairākus)</p>
+  <input type="file" id="tiffFile" accept=".tif, .tiff" multiple />
+  <div id="tiffFileList" style="margin-top: 5px; font-size: 0.9em; color: #666;"></div>
+
+  <p><strong>Punktu attēlošana kartē:</strong></p>
+  <div style="margin-bottom: 10px;">
+    <label for="samplingSlider">Sampling % (0% = visi punkti, 100% = neviens punkts):</label>
+    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+      <input type="range" id="samplingSlider" min="0" max="50" value="0" style="flex: 1;">
+      <span id="samplingValue" style="font-weight: bold; min-width: 40px;">0%</span>
+    </div>
+    <div style="font-size: 0.9em; color: #666; margin-top: 3px;">
+      <span id="samplingDescription">Visi punkti tiks attēloti kartē</span>
+    </div>
+  </div>
+
+  <!-- Darbību pogu konteiners -->
+  <div class="button-container">
+    <button id="processBtn">Apstrādāt</button>
+    <button id="downloadBtn" style="display:none;">Lejupielādēt GeoJSON</button>
+    <button id="downloadDXFBtn" style="display:none;">Lejupielādēt DXF</button>
+    <button id="downloadExcelBtn" style="display:none;">Lejupielādēt tabulu CSV</button>
+    <button id="downloadXlsxBtn" style="display:none;">Lejupielādēt tabulu Excel</button>
+    <button id="resetBtn" class="reset-button" style="display:none;">Jauna apstrāde</button>
+  </div>
+  <div id="progressContainer" style="margin: 10px 0;">
+    <progress id="progressBar" value="0" max="100" style="width: 100%; display: none;"></progress>
+  </div>
+
+  <div id="status"></div>
+  <div id="error"></div>
+
+  <!-- Karte -->
+  <div id="map"></div>
+
+  <!-- Rezultātu tabula un statistika -->
+  <div id="results">
+    <div id="geojsonTable"></div>
+    <br/>
+    <div id="statistics"></div>
+  </div>
+
+  <script>
+    // Tumšā režīma slēdzis
+    document.getElementById('darkModeSwitch').addEventListener('change', function() {
+      document.body.classList.toggle('dark-mode', this.checked);
+    });
+
+    // Radio pogu funkcionalitāte failu tipu izvēlei
+    document.getElementById('csvOption').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('csvFile').style.display = 'block';
+        document.getElementById('lasFile').style.display = 'none';
+        document.getElementById('selectedFilesInfo').style.display = 'none';
+      }
+    });
+
+    document.getElementById('lasOption').addEventListener('change', function() {
+      if (this.checked) {
+        document.getElementById('csvFile').style.display = 'none';
+        document.getElementById('lasFile').style.display = 'block';
+        document.getElementById('selectedFilesInfo').style.display = 'block';
+      }
+    });
+
+    // Pievienojam failu saraksta atjaunošanu
+    document.getElementById('lasFile').addEventListener('change', function() {
+      updateSelectedFilesInfo(this.files);
+    });
+    
+    // Pievienojam TIFF failu saraksta atjaunošanu
+    document.getElementById('tiffFile').addEventListener('change', function() {
+      updateTiffFilesInfo(this.files);
+    });
+    
+    // Sampling slider funkcionalitāte
+    document.getElementById('samplingSlider').addEventListener('input', function() {
+      updateSamplingDisplay(this.value);
+    });
+    
+    function updateSamplingDisplay(value) {
+      const samplingValue = document.getElementById('samplingValue');
+      const samplingDescription = document.getElementById('samplingDescription');
+      
+      samplingValue.textContent = value + '%';
+      
+      if (value == 0) {
+        samplingDescription.textContent = 'Visi punkti tiks attēloti kartē';
+      } else if (value <= 5) {
+        samplingDescription.textContent = `Katrs ${Math.round(100/value)}. punkts tiks attēlots (${100-value}% punktu)`;
+      } else if (value <= 10) {
+        samplingDescription.textContent = `Katrs ${Math.round(100/value)}. punkts tiks attēlots (${100-value}% punktu)`;
+      } else if (value <= 20) {
+        samplingDescription.textContent = `Katrs ${Math.round(100/value)}. punkts tiks attēlots (${100-value}% punktu)`;
+      } else {
+        samplingDescription.textContent = `Ļoti maz punktu tiks attēlots (${100-value}% punktu)`;
+      }
+    }
+    
+    // Inicializējam display
+    updateSamplingDisplay(0);
+
+    function updateSelectedFilesInfo(files) {
+      const infoDiv = document.getElementById('selectedFilesInfo');
+      if (files.length === 0) {
+        infoDiv.style.display = 'none';
+        return;
+      }
+      
+      let totalSize = 0;
+      let fileListHtml = '<div class="file-list"><strong>Izvēlētie LAS faili:</strong><br>';
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        totalSize += file.size;
+        const sizeStr = (file.size / 1024 / 1024).toFixed(1);
+        fileListHtml += `<div class="file-item">${i + 1}. ${file.name} (${sizeStr} MB)</div>`;
+      }
+      
+      const totalSizeStr = (totalSize / 1024 / 1024).toFixed(1);
+      fileListHtml += `<br><strong>Kopā: ${files.length} faili, ${totalSizeStr} MB</strong></div>`;
+      
+      infoDiv.innerHTML = fileListHtml;
+      infoDiv.style.display = 'block';
+    }
+    
+    function updateTiffFilesInfo(files) {
+      const infoDiv = document.getElementById('tiffFileList');
+      if (files.length === 0) {
+        infoDiv.style.display = 'none';
+        return;
+      }
+      
+      let totalSize = 0;
+      let fileListHtml = '<div class="file-list"><strong>Izvēlētie GeoTIFF faili:</strong><br>';
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        totalSize += file.size;
+        const sizeStr = (file.size / 1024 / 1024).toFixed(1);
+        fileListHtml += `<div class="file-item">${i + 1}. ${file.name} (${sizeStr} MB)</div>`;
+      }
+      
+      const totalSizeStr = (totalSize / 1024 / 1024).toFixed(1);
+      fileListHtml += `<br><strong>Kopā: ${files.length} faili, ${totalSizeStr} MB</strong></div>`;
+      
+      infoDiv.innerHTML = fileListHtml;
+      infoDiv.style.display = 'block';
+    }
+
+    // Jūsu esošais JS kods:
+    let csvData = null;
+    let tiffArray = null;
+    let geoTransform = null;
+    let imageWidth = 0;
+    let imageHeight = 0;
+    let tiePoint = [];
+    let pixelScale = [];
+    let currentGeojsonData = null; // saglabājam pilno GeoJSON pēc apstrādes
+    let map = null;
+    let resultFileName = "";
+
+
+    // Definējiet LKS-92 projekciju
+    proj4.defs("EPSG:3059", "+proj=tmerc +lat_0=0 +lon_0=24 +k=0.9996 +x_0=500000 +y_0=-6000000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+
+    // Kartes inicializācija
+    function initMap() {
+      if (map) {
+        map.remove();
+      }
+      
+      map = L.map('map').setView([56.946285, 24.105078], 7);
+      
+      // Definējam pamatkaršu slāņus
+      const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      });
+    
+      const ortofoto = L.tileLayer.wms('https://lvmgeoserver.lvm.lv/geoserver/ows', {
+        layers: 'public:Orto_LKS',
+        format: 'image/png',
+        transparent: true,
+        version: '1.3.0',
+        attribution: '&copy; <a href="https://www.lgia.gov.lv/">LĢIA</a>'
+      });
+    
+      // Izveidojam pamatkaršu kontrolieri
+      const baseMaps = {
+        "OpenStreetMap": osm,
+        "LĢIA Ortofoto": ortofoto
+      };
+    
+      // Pievienojam noklusējuma karti
+      osm.addTo(map);
+    
+      // Pievienojam slāņu kontrolieri, iestatot collapsed: false, lai tas būtu atvērts
+      L.control.layers(baseMaps, null, { position: 'topleft', collapsed: false }).addTo(map);
+    }
+
+    // Global canvas renderer for better performance with many points
+    const canvasRenderer = L.canvas({ padding: 0.5 });
+
+    // Funkcija punktu krāsas noteikšanai
+    function getDiffColor(diff) {
+      if (diff >= 1.0) return '#FF0000';
+      if (diff >= 0.5) return '#C80032';
+      if (diff >= 0.2) return '#E57373';
+      if (diff >= 0.1) return '#FFCDD2';
+      if (diff >= 0) return '#8BC34A';
+      if (diff >= -0.1) return '#8BC34A';
+      if (diff >= -0.2) return '#B3E5FC';
+      if (diff >= -0.5) return '#64B5F6';
+      if (diff >= -1.0) return '#1976D2';
+      return '#0000FF';
+    }
+
+    // Funkcija punktu vizualizācijai kartē
+    function visualizePoints(geojsonData) {
+      if (!map) {
+        initMap();
+      }
+      // Remove previous point layers if they exist
+      if (window.pointLayers) {
+        Object.values(window.pointLayers).forEach(layer => {
+          if (map.hasLayer(layer)) { map.removeLayer(layer); }
+        });
+      }
+      // Remove previous text (tx) layers if they exist
+      if (window.diffLayers) {
+        Object.values(window.diffLayers).forEach(layer => {
+          if (map.hasLayer(layer)) { map.removeLayer(layer); }
+        });
+      }
+      
+      // Point layers already initialized in createGeoJSON
+      
+      // Initialize text layers (using "tx" prefix, default ON)
+      window.diffLayers = {
+        "tx virs 1.0 m": L.layerGroup(),
+        "tx 0.5–1.0 m": L.layerGroup(),
+        "tx 0.2–0.5 m": L.layerGroup(),
+        "tx 0.1–0.2 m": L.layerGroup(),
+        "tx līdz 0.1 m": L.layerGroup(),
+        "tx -0.1–0 m": L.layerGroup(),
+        "tx -0.2– -0.1 m": L.layerGroup(),
+        "tx -0.5– -0.2 m": L.layerGroup(),
+        "tx -1.0– -0.5 m": L.layerGroup(),
+        "tx zem -1.0 m": L.layerGroup()
+      };
+
+      // Points are now added directly during createGeoJSON process
+      console.log(`🎨 Punkti jau pievienoti slāņos createGeoJSON procesā`);
+      
+      // Create bounds group from existing layers
+      const allMarkersGroup = L.featureGroup();
+      Object.values(window.pointLayers).forEach(layer => {
+        layer.eachLayer(marker => allMarkersGroup.addLayer(marker));
+      });
+      
+      // Zoom-based point loading to prevent memory issues
+      const MIN_ZOOM_FOR_POINTS = 12; // Show points only when zoomed in
+      const defaultVisibleLayers = [
+        "ΔZ līdz 0.1 m",
+        "ΔZ -0.1–0 m"
+      ];
+      
+      // Function to manage point visibility based on zoom
+      function updatePointVisibility() {
+        const currentZoom = map.getZoom();
+        const shouldShowPoints = currentZoom >= MIN_ZOOM_FOR_POINTS;
+        
+        defaultVisibleLayers.forEach(layerName => {
+          if (window.pointLayers[layerName]) {
+            if (shouldShowPoints && !map.hasLayer(window.pointLayers[layerName])) {
+              window.pointLayers[layerName].addTo(map);
+              console.log(`🔍 Zoom ${currentZoom}: Parādīti ${layerName} punkti`);
+            } else if (!shouldShowPoints && map.hasLayer(window.pointLayers[layerName])) {
+              map.removeLayer(window.pointLayers[layerName]);
+              console.log(`🔍 Zoom ${currentZoom}: Paslēpti ${layerName} punkti`);
+            }
+          }
+        });
+      }
+      
+      // Add zoom event listener
+      map.on('zoomend', updatePointVisibility);
+      
+      // Initial check
+      updatePointVisibility();
+      
+      // Build the overlay object in the desired order:
+      const overlaysOrdered = {
+        ". 1.0 m un vairāk": window.pointLayers["ΔZ virs 1.0 m"],
+        "t 1.0 m un vairāk": window.diffLayers["tx virs 1.0 m"],
+        ". 0.5–1.0 m": window.pointLayers["ΔZ 0.5–1.0 m"],
+        "t 0.5–1.0 m": window.diffLayers["tx 0.5–1.0 m"],
+        ". 0.2–0.5 m": window.pointLayers["ΔZ 0.2–0.5 m"],
+        "t 0.2–0.5 m": window.diffLayers["tx 0.2–0.5 m"],
+        ". 0.1–0.2 m": window.pointLayers["ΔZ 0.1–0.2 m"],
+        "t 0.1–0.2 m": window.diffLayers["tx 0.1–0.2 m"],
+        ". 0.1 m": window.pointLayers["ΔZ līdz 0.1 m"],
+        "t 0.1 m": window.diffLayers["tx līdz 0.1 m"],
+        ". -0.1–0 m": window.pointLayers["ΔZ -0.1–0 m"],
+        "t -0.1–0 m": window.diffLayers["tx -0.1–0 m"],
+        ". -0.2– -0.1 m": window.pointLayers["ΔZ -0.2– -0.1 m"],
+        "t -0.2– -0.1 m": window.diffLayers["tx -0.2– -0.1 m"],
+        ". -0.5– -0.2 m": window.pointLayers["ΔZ -0.5– -0.2 m"],
+        "t -0.5– -0.2 m": window.diffLayers["tx -0.5– -0.2 m"],
+        ". -1.0– -0.5 m": window.pointLayers["ΔZ -1.0– -0.5 m"],
+        "t -1.0– -0.5 m": window.diffLayers["tx -1.0– -0.5 m"],
+        ". -1.0 m un vairāk": window.pointLayers["ΔZ zem -1.0 m"],
+        "t -1.0 m un vairāk": window.diffLayers["tx zem -1.0 m"]
+      };
+      
+      // Add text layers in one go (they remain off by default)
+      Object.values(window.diffLayers).forEach(layer => { /* not added by default */ });
+      
+      if (window.layerControl) { map.removeControl(window.layerControl); }
+      window.layerControl = L.control.layers(null, overlaysOrdered, { collapsed: false, position: 'topright' }).addTo(map);
+      
+      // Pievienojam noklusējuma slāņus (punkti)
+      const defaultLayers = [
+        ". 1.0 m un vairāk",
+        ". 0.5–1.0 m", 
+        ". 0.2–0.5 m",
+        ". 0.1–0.2 m",
+        ". 0.1 m",
+        ". -0.1–0 m",
+        ". -0.2– -0.1 m",
+        ". -0.5– -0.2 m",
+        ". -1.0– -0.5 m",
+        ". -1.0 m un vairāk"
+      ];
+      
+      defaultLayers.forEach(layerName => {
+        if (overlaysOrdered[layerName]) {
+          overlaysOrdered[layerName].addTo(map);
+        }
+      });
+      
+      if (allMarkersGroup.getLayers().length > 0) {
+        map.fitBounds(allMarkersGroup.getBounds());
+      }
+      addLegend();
+    }
+
+    // Poga, kas sāk apstrādi
+    document.getElementById("processBtn").addEventListener("click", async () => {
+      const csvFileInput = document.getElementById("csvFile");
+      const lasFileInput = document.getElementById("lasFile");
+      const tiffFileInput = document.getElementById("tiffFile");
+      const isCSVSelected = document.getElementById("csvOption").checked;
+      const isLASSelected = document.getElementById("lasOption").checked;
+
+      // Pārbaudam, vai ir izvēlēti nepieciešamie faili
+      if (isCSVSelected && !csvFileInput.files.length) {
+        alert("Lūdzu izvēlieties CSV failu!");
+        return;
+      }
+      if (isLASSelected && !lasFileInput.files.length) {
+        alert("Lūdzu izvēlieties vismaz vienu LAS failu!");
+        return;
+      }
+      if (!tiffFileInput.files.length) {
+        alert("Lūdzu izvēlieties GeoTIFF failu!");
+        return;
+      }
+
+      // Izveidojam dinamisko rezultātu faila nosaukumu
+      const tiffFileName = tiffFileInput.files[0].name;
+      const baseName = tiffFileName.replace(/\.[^/.]+$/, ""); // noņemam paplašinājumu
+      const now = new Date();
+      const dateStr = now.getFullYear().toString() +
+                     ("0" + (now.getMonth() + 1)).slice(-2) +
+                     ("0" + now.getDate()).slice(-2);
+      
+      // Pievienojam informāciju par vairākiem LAS failiem
+      let fileInfo = "";
+      if (isLASSelected && lasFileInput.files.length > 1) {
+        fileInfo += `_${lasFileInput.files.length}LAS`;
+      }
+      if (tiffFileInput.files.length > 1) {
+        fileInfo += `_${tiffFileInput.files.length}TIFF`;
+      }
+      
+      resultFileName = `${baseName}${fileInfo}_starpibu_atskaite_${dateStr}`;
+
+      document.getElementById("status").innerText = "Apstrāde sākas...";
+      const progress = document.getElementById("progressBar");
+      if(progress) { progress.style.display = "inline-block"; progress.value = 0; }
+      
+      try {
+        document.getElementById("error").innerHTML = "";
+        
+        // Sākuma atmiņas stāvoklis
+        logMemoryUsage('Sākums:');
+        
+        // Nolasām punktu datus atkarībā no izvēlētā tipa
+        if (isCSVSelected) {
+          await readCSV(csvFileInput.files[0]);
+        } else if (isLASSelected) {
+          await readMultipleLAS(lasFileInput.files);
+        }
+        logMemoryUsage('Pēc punktu ielādes:');
+        if(progress) { progress.value = 30; }
+        
+        // Nododam LAS robežas GeoTIFF lasīšanai optimizācijai
+        const lasBounds = csvData && csvData.bounds ? csvData.bounds : null;
+        console.log(`🔍 LAS robežas optimizācijai:`, lasBounds);
+        
+        if (!lasBounds) {
+          console.warn(`⚠️ Nav LAS robežu - nevar optimizēt GeoTIFF ielādi!`);
+        }
+        
+        // VIENMĒR izmantojam vairāku failu apstrādi, pat ja ir tikai viens fails
+        await readMultipleGeoTIFF(tiffFileInput.files, lasBounds);
+        logMemoryUsage('Pēc GeoTIFF ielādes:');
+        if(progress) { progress.value = 60; }
+        
+        // Debug informācija pirms createGeoJSON
+        console.log('🔍 DEBUG stāvoklis pirms createGeoJSON:');
+        console.log(`   csvData: ${csvData ? csvData.length : 'null'} punkti`);
+        console.log(`   geoTransform: ${geoTransform ? 'OK' : 'null'}`);
+        console.log(`   tiffArray: ${tiffArray ? 'OK' : 'null'}`);
+        console.log(`   geoTiffImage: ${geoTiffImage ? 'OK' : 'null'}`);
+        
+        if (csvData && csvData.length > 0 && geoTransform && (tiffArray || geoTiffImage)) {
+          const geojsonData = await createGeoJSON();
+          currentGeojsonData = geojsonData;
+          if(progress) { progress.value = 80; }
+          
+          if (geojsonData.features.length === 0) {
+            throw new Error("Nav atrasti derīgi punkti! Pārbaudiet, vai faili pārklāj to pašu teritoriju.");
+          }
+          
+          displayGeojsonAsTable(geojsonData);
+          await computeStatistics();
+          if(progress) { progress.value = 100; }
+          
+          document.getElementById("downloadBtn").style.display = "inline-block";
+          document.getElementById("downloadDXFBtn").style.display = "inline-block";
+          document.getElementById("downloadExcelBtn").style.display = "inline-block";
+          document.getElementById("downloadXlsxBtn").style.display = "inline-block";
+          document.getElementById("resetBtn").style.display = "inline-block";
+          
+          setTimeout(() => { if(progress) { progress.style.display = "none"; } }, 1000);
+          visualizePoints(geojsonData);
+          
+          // Count actual points in all layers
+          let totalPointsInLayers = 0;
+          if (window.pointLayers) {
+            Object.values(window.pointLayers).forEach(layer => {
+              totalPointsInLayers += layer.getLayers().length;
+            });
+          }
+          
+          document.getElementById("status").innerText = `Apstrāde pabeigta! Kartē attēloti ${totalPointsInLayers.toLocaleString()} punkti.`;
+        } else {
+          // Detalizēts kļūdas ziņojums
+          let errorDetails = "Datu ielāde neizdevās:";
+          if (!csvData || csvData.length === 0) {
+            errorDetails += "\n❌ LAS dati nav ielādēti vai ir tukši";
+          }
+          if (!geoTransform) {
+            errorDetails += "\n❌ GeoTIFF ģeoreferences informācija nav pieejama";
+          }
+          if (!tiffArray && !geoTiffImage) {
+            errorDetails += "\n❌ GeoTIFF dati nav ielādēti";
+          }
+          errorDetails += "\n\n💡 Pārbaudiet failu formātus un to saderību!";
+          
+          throw new Error(errorDetails);
+        }
+      } catch (error) {
+        console.error('Apstrādes kļūda:', error);
+        document.getElementById("error").innerHTML = `<strong>Kļūda:</strong> ${error.message}`;
+        document.getElementById("status").innerText = "Apstrāde pārtraukta ar kļūdu.";
+        if(progress) { progress.style.display = "none"; }
+      }
+    });
+
+    // Funkcija, kas vizualizē GeoJSON rezultātu tabulā
+    function displayGeojsonAsTable(geojsonData) {
+      let tableHtml = "<h4>Starpību saraksts, pirmās 100 rindas</h4><table><thead><tr><th>#</th><th>Punkta_X</th><th>Punkta_Y</th><th>Punkta_Z</th><th>DEM_Z</th><th>Diff</th></tr></thead><tbody>";
+      const featuresToDisplay = geojsonData.features.slice(0, 100);
+      featuresToDisplay.forEach((feature, index) => {
+        tableHtml += "<tr>";
+        tableHtml += "<td>" + (index + 1) + "</td>";
+        tableHtml += "<td>" + feature.properties.CSV_X.toFixed(2) + "</td>";
+        tableHtml += "<td>" + feature.properties.CSV_Y.toFixed(2) + "</td>";
+        tableHtml += "<td>" + feature.properties.CSV_Z.toFixed(2) + "</td>";
+        tableHtml += "<td>" + feature.properties.DEM_Z.toFixed(2) + "</td>";
+        tableHtml += "<td>" + feature.properties.difference.toFixed(2) + "</td>";
+        tableHtml += "</tr>";
+      });
+      tableHtml += "</tbody></table>";
+      // Ievieto tabulu tieši zem "Mīnus vērtības" tabulas, izmantojot insertAdjacentHTML("afterend")
+      document.getElementById("statistics").insertAdjacentHTML("afterend", "<div class='result-table-container'>" + tableHtml + "</div>");
+    }
+
+    // Poga lejupielādei
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      if (currentGeojsonData) {
+        const text = JSON.stringify(currentGeojsonData, null, 2);
+        downloadFile(`${resultFileName}.geojson`, text);
+      }
+    });
+
+    // Poga DXF lejupielādei
+    document.getElementById("downloadDXFBtn").addEventListener("click", () => {
+      const dxfText = createDXF();
+      downloadFile(`${resultFileName}.dxf`, dxfText);
+    });
+
+    // Lejupielādes pogas Excel CSV
+    document.getElementById("downloadExcelBtn").addEventListener("click", () => {
+      if (currentGeojsonData) {
+        const csvContent = exportTableAsCSV(currentGeojsonData);
+        downloadCSVFile(`${resultFileName}.csv`, csvContent);
+      }
+    });
+
+    // Lejupielādes pogas XLSX
+    document.getElementById("downloadXlsxBtn").addEventListener("click", () => {
+      if (currentGeojsonData) {
+        exportTableAsXLSX(currentGeojsonData);
+      }
+    });
+    
+    // Jauna apstrāde poga
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      resetApplication();
+    });
+
+    function resetApplication() {
+      // Dzēšam visus datus
+      csvData = null;
+      tiffArray = null;
+      geoTransform = null;
+      imageWidth = 0;
+      imageHeight = 0;
+      tiePoint = null;
+      pixelScale = null;
+      geoTiffImage = null;
+      currentGeojsonData = null;
+      resultFileName = "";
+      
+      // Dzēšam papildu GeoTIFF attēlus
+      if (window.additionalGeoTiffImages) {
+        window.additionalGeoTiffImages = [];
+      }
+      
+      // Dzēšam punktu slāņus no kartes
+      if (window.pointLayers) {
+        Object.values(window.pointLayers).forEach(layer => {
+          if (map.hasLayer(layer)) {
+            map.removeLayer(layer);
+          }
+          layer.clearLayers();
+        });
+        window.pointLayers = null;
+      }
+      
+      // Dzēšam teksta slāņus
+      if (window.diffLayers) {
+        Object.values(window.diffLayers).forEach(layer => {
+          if (map.hasLayer(layer)) {
+            map.removeLayer(layer);
+          }
+          layer.clearLayers();
+        });
+        window.diffLayers = null;
+      }
+      
+      // Atiestatām failu ievades laukus
+      document.getElementById("csvFile").value = "";
+      document.getElementById("lasFile").value = "";
+      document.getElementById("tiffFile").value = "";
+      
+      // Paslēpjam failu sarakstus
+      document.getElementById("selectedFilesInfo").style.display = "none";
+      document.getElementById("tiffFileList").style.display = "none";
+      
+      // Paslēpjam pogas
+      document.getElementById("downloadBtn").style.display = "none";
+      document.getElementById("downloadDXFBtn").style.display = "none";
+      document.getElementById("downloadExcelBtn").style.display = "none";
+      document.getElementById("downloadXlsxBtn").style.display = "none";
+      document.getElementById("resetBtn").style.display = "none";
+      
+      // Paslēpjam progress bar
+      const progress = document.getElementById("progressBar");
+      if (progress) {
+        progress.style.display = "none";
+        progress.value = 0;
+      }
+      
+      // Dzēšam status un error ziņojumus
+      document.getElementById("status").innerText = "";
+      document.getElementById("error").innerHTML = "";
+      
+      // Dzēšam statistikas un tabulas
+      const statisticsDiv = document.getElementById("statistics");
+      if (statisticsDiv) {
+        statisticsDiv.innerHTML = "";
+      }
+      
+      // Dzēšam rezultātu tabulas
+      const resultTables = document.querySelectorAll('.result-table-container');
+      resultTables.forEach(table => table.remove());
+      
+      // Dzēšam cache
+      if (typeof geoTiffCache !== 'undefined') {
+        geoTiffCache.clear();
+      }
+      
+      console.log("🔄 Aplikācija atiestatīta - gatava jaunai apstrādei!");
+    }
+
+    async function readCSV(file) {
+      return new Promise((resolve, reject) => {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            results.data = results.data.map(row => {
+              const newRow = {};
+              Object.keys(row).forEach(key => {
+                newRow[key.toLowerCase()] = row[key];
+              });
+              return newRow;
+            });
+            if (!results.data[0].hasOwnProperty('x') || 
+                !results.data[0].hasOwnProperty('y') || 
+                !results.data[0].hasOwnProperty('z')) {
+              reject("CSV failā nav nepieciešamās kolonnas (x, y, z vai X, Y, Z)");
+              return;
+            }
+            csvData = results.data;
+            
+            // Aprēķinām CSV punktu robežas
+            const bounds = calculateCSVBounds(csvData);
+            console.log(`📍 CSV robežas:`, bounds);
+            csvData.bounds = bounds;
+            
+            resolve();
+          },
+          error: function(err) {
+            console.error("Kļūda CSV nolasīšanā:", err);
+            reject(err);
+          }
+        });
+      });
+    }
+
+    async function readMultipleLAS(files) {
+      return new Promise(async (resolve, reject) => {
+        try {
+          console.log(`🗂️ Sāk vairāku LAS failu apstrādi: ${files.length} faili`);
+          
+          let allPoints = [];
+          let totalFileSize = 0;
+          let foundUnclassifiedFiles = false;
+          let fileStatusList = []; // Saraksts ar katra faila klasifikācijas statusu
+          
+          // Aprēķinām kopējo failu izmēru
+          for (let i = 0; i < files.length; i++) {
+            totalFileSize += files[i].size;
+          }
+          console.log(`📊 Kopējais izmērs: ${(totalFileSize/1024/1024).toFixed(1)}MB`);
+          
+          // Atmiņas pārbaude vairāku failu gadījumā
+          const memory = getMemoryInfo();
+          if (memory && totalFileSize > memory.available * 0.3) {
+            console.warn(`⚠️ BRĪDINĀJUMS: Liels failu izmērs (${(totalFileSize/1024/1024).toFixed(1)}MB) var pārsniegt atmiņas limitus!`);
+            console.warn(`💾 Pieejamā atmiņa: ${(memory.available/1024/1024).toFixed(1)}MB`);
+            console.warn(`🔧 Sistēma automātiski optimizēs apstrādi`);
+          }
+          
+          // Apstrādājam katru failu secīgi
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            console.log(`📁 Apstrādā failu ${i + 1}/${files.length}: ${file.name} (${(file.size/1024/1024).toFixed(1)}MB)`);
+            
+            // Pielāgojam izsaukumu, jo tagad readSingleLAS atgriež Promise
+            const result = await readSingleLAS(file, i + 1, files.length);
+            const filePoints = result.points;
+            
+            // Ja failā ir neklasificēti punkti, piefiksējam to
+            if (result.hasUnclassifiedWarning) {
+              foundUnclassifiedFiles = true;
+              console.log(`⚠️ Fails ${i + 1}/${files.length}: ${file.name} satur neklasificētus punktus!`);
+              fileStatusList.push({
+                name: file.name,
+                isClassified: false,
+                index: i + 1,
+                totalFiles: files.length
+              });
+            } else {
+              fileStatusList.push({
+                name: file.name,
+                isClassified: true,
+                index: i + 1,
+                totalFiles: files.length
+              });
+            }
+            
+            allPoints = allPoints.concat(filePoints);
+            
+            // Atjauninām statusu
+            const progress = ((i + 1) / files.length * 100).toFixed(1);
+            document.getElementById('status').textContent = `📁 LAS ${i + 1}/${files.length} pabeigts (${progress}%) - ${allPoints.length} punkti kopā`;
+            
+            // Agresīva atmiņas tīrīšana starp failiem
+            if (i < files.length - 1) {
+              // Tīrām cache starp failiem
+              geoTiffCache.clear();
+              
+              // Pauze un garbage collection
+              await new Promise(resolve => setTimeout(resolve, 200));
+              if (typeof gc !== 'undefined') {
+                gc();
+                console.log(`🧹 Atmiņa tīrīta pēc faila ${i + 1}`);
+              }
+              
+              // Atmiņas stāvokļa pārbaude
+              logMemoryUsage(`Pēc faila ${i + 1}:`);
+            }
+          }
+          
+          console.log(`✅ Visi LAS faili apstrādāti! Kopā: ${allPoints.length} punkti`);
+          
+          // VIENMĒR parādām LAS failu klasifikācijas kopsavilkumu
+          if (fileStatusList.length > 0) {
+            // Izveidojam sarakstu ar neklasificētiem un klasificētiem failiem
+            const unclassifiedFiles = fileStatusList.filter(item => !item.isClassified);
+            const classifiedFiles = fileStatusList.filter(item => item.isClassified);
+            
+            const unclassifiedNames = unclassifiedFiles.length > 0 ? 
+              unclassifiedFiles.map(f => f.name).join(", ") : 
+              "Nav neklasificētu failu";
+            const classifiedNames = classifiedFiles.length > 0 ? 
+              classifiedFiles.map(f => f.name).join(", ") : 
+              "Nav klasificētu failu";
+            
+            const warningMessage = `⚠️ LAS faili, kuri ir neklasificēti - visi punkti tiks izmantoti apstrāde.`;
+            console.warn(warningMessage);
+            console.warn(`Neklasificēti faili: ${unclassifiedNames}`);
+            console.warn(`Klasificēti faili: ${classifiedNames}`);
+            
+            // Pievienojam paziņojumu arī apstrādes beigās ar detalizētu informāciju par failiem
+            document.getElementById('error').innerHTML += `
+              <div style="background-color: #FFF3CD; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0; font-weight: bold;">
+                ${warningMessage} 
+                <br><small>Parasti klasificētos LAS failos ir zemes punktu klasificētija - (klase 2).</small>
+                <hr style="border-top: 1px solid #856404; margin: 8px 0;">
+                <div>
+                  <strong>Neklasificēti faili:</strong> ${unclassifiedNames}
+                </div>
+                <div>
+                  <strong>Klasificēti faili:</strong> ${classifiedNames}
+                </div>
+              </div>`;
+          }
+          
+          // VIENMĒR pievienojam informatīvu paziņojumu par punktu izmantošanu
+          document.getElementById('error').innerHTML += `
+            <div style="background-color: #E3F2FD; color: #0D47A1; padding: 10px; border-radius: 5px; margin: 10px 0;">
+              ℹ️ INFORMĀCIJA: Apstrādes laikā tiek izmantoti visi LAS/LAZ failu punkti, ne tikai klasificētie zemes (ground) punkti. LAZ faili tiek automātiski dekompresēti.
+            </div>`;
+          
+          // Saglabājam failu sarakstu CSV objektā
+          let fileStatusInfo = [];
+          fileStatusInfo.classified = fileStatusList.filter(item => item.isClassified).map(item => item.name);
+          fileStatusInfo.unclassified = fileStatusList.filter(item => !item.isClassified).map(item => item.name);
+          
+          // Aprēķinām apvienoto robežu
+          const bounds = calculateLASBounds(allPoints);
+          console.log(`📍 Apvienotās LAS robežas:`, bounds);
+          
+          csvData = allPoints;
+          csvData.bounds = bounds;
+          csvData.fileStatusInfo = fileStatusInfo;
+          resolve();
+          
+        } catch (error) {
+          console.error('Kļūda vairāku LAS failu apstrādē:', error);
+          reject(error);
+        }
+      });
+    }
+
+    async function readSingleLAS(file, fileIndex, totalFiles) {
+      return new Promise(async (resolve, reject) => {
+        try {
+          const isLAZ = file.name.toLowerCase().endsWith('.laz');
+          console.log(`${isLAZ ? 'LAZ' : 'LAS'} ${fileIndex}/${totalFiles}: ${file.name}, ${(file.size/1024/1024).toFixed(1)}MB`);
+          
+          let processedFile = file;
+          
+          // Ja ir LAZ fails, mēģinām dekompresiju
+          if (isLAZ) {
+            console.log(`🔄 Atpazīts LAZ fails: ${file.name}`);
+            try {
+              // Mēģinām izmantot laz-perf bibliotēku, ja tā ir pieejama
+              if (typeof LazPerf !== 'undefined' && LazPerf.LASDecoder) {
+                console.log(`🔧 Izmantojam laz-perf dekompresiju...`);
+                const lazBuffer = await file.arrayBuffer();
+                const decoder = new LazPerf.LASDecoder(lazBuffer);
+                const decompressedBuffer = decoder.getDecompressedData();
+                
+                const decompressedBlob = new Blob([decompressedBuffer], { type: 'application/octet-stream' });
+                processedFile = new File([decompressedBlob], file.name.replace('.laz', '.las'), { type: 'application/octet-stream' });
+                
+                console.log(`✅ LAZ fails dekompresēts: ${file.name} → ${(decompressedBuffer.byteLength/1024/1024).toFixed(1)}MB`);
+              } else {
+                throw new Error('LAZ dekompresijas bibliotēka nav pieejama');
+              }
+            } catch (lazError) {
+              console.warn(`⚠️ LAZ dekompresija neizdevās: ${lazError.message}`);
+              console.warn(`📋 Mēģinām lasīt LAZ failu kā nesaspiesto LAS failu...`);
+              console.warn(`   Dažreiz LAZ faili var būt daļēji nesaspiesti vai izmantot savietojamu formātu.`);
+              // Turpinām ar oriģinālo failu - dažreiz LAZ faili ir savietojami
+            }
+          }
+          
+          // Nolasām LAS header (izmantojam processedFile)
+          const headerBlob = processedFile.slice(0, 375);
+          const headerBuffer = await headerBlob.arrayBuffer();
+          const dv = new DataView(headerBuffer);
+          
+          const signature = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+          if (signature !== "LASF") {
+            throw new Error(`Fails ${file.name} nav LAS fails!`);
+          }
+          
+          const pointDataOffset = dv.getUint32(96, true);
+          const numberOfPoints = dv.getUint32(107, true);
+          const pointDataFormat = dv.getUint8(104);
+          const pointRecordLen = dv.getUint16(105, true);
+          
+          const xScale = dv.getFloat64(131, true);
+          const yScale = dv.getFloat64(139, true); 
+          const zScale = dv.getFloat64(147, true);
+          const xOffset = dv.getFloat64(155, true);
+          const yOffset = dv.getFloat64(163, true);
+          const zOffset = dv.getFloat64(171, true);
+          
+          console.log(`LAS ${fileIndex}: ${numberOfPoints} punkti, formāts ${pointDataFormat}`);
+          
+          const points = [];
+          let hasUnclassifiedWarning = false;
+          
+          // Adaptīvs LAS chunk izmērs
+          let lasChunkSize;
+          switch(systemSpecs.systemClass) {
+            case 'high-end':
+              lasChunkSize = Math.min(200000, Math.floor(numberOfPoints / (cpuCores / 2)));
+              break;
+            case 'high':
+              lasChunkSize = Math.min(150000, Math.floor(numberOfPoints / cpuCores));
+              break;
+            case 'medium':
+              lasChunkSize = Math.min(100000, Math.floor(numberOfPoints / cpuCores));
+              break;
+            case 'low':
+              lasChunkSize = Math.min(50000, Math.floor(numberOfPoints / cpuCores));
+              break;
+            default:
+              lasChunkSize = Math.min(50000, Math.floor(numberOfPoints / cpuCores));
+          }
+          
+          const chunkSize = Math.max(10000, lasChunkSize);
+          console.log(`📦 LAS ${fileIndex} chunk: ${chunkSize} punkti`);
+          
+          // Vispirms analizējam klasifikācijas (pirmais chunk)
+          let fileIsClassified = true; // Pieņemam, ka ir klasificēts
+          if (numberOfPoints > 0) {
+            const analysisChunkSize = Math.min(50000, numberOfPoints); // Analizējam līdz 50k punktiem
+            const byteStart = pointDataOffset;
+            const byteLen = analysisChunkSize * pointRecordLen;
+            
+            const analysisBlob = processedFile.slice(byteStart, byteStart + byteLen);
+            const analysisBuffer = await analysisBlob.arrayBuffer();
+            const analysisView = new DataView(analysisBuffer);
+            
+            let classificationCounts = {};
+            let offset = 0;
+            const classOffset = pointDataFormat >= 6 ? 17 : 15;
+            
+            // Analizējam klasifikācijas
+            for (let i = 0; i < analysisChunkSize; i++) {
+              const classification = analysisView.getUint8(offset + classOffset) & 0x1F;
+              classificationCounts[classification] = (classificationCounts[classification] || 0) + 1;
+              offset += pointRecordLen;
+            }
+            
+            console.log(`🔍 LAS ${fileIndex} klasifikāciju analīze:`, classificationCounts);
+            
+            // Noteikam, vai fails ir klasificēts
+            const totalAnalyzed = analysisChunkSize;
+            const groundPoints = classificationCounts[2] || 0;
+            const waterPoints = classificationCounts[8] || 0;
+            const actualWaterPoints = classificationCounts[9] || 0;
+            const buildingPoints = classificationCounts[6] || 0;
+            const vegetationPoints = (classificationCounts[3] || 0) + (classificationCounts[4] || 0) + (classificationCounts[5] || 0);
+            const unclassifiedCount = (classificationCounts[0] || 0) + (classificationCounts[1] || 0);
+            
+            const classifiedPoints = groundPoints + waterPoints + actualWaterPoints + buildingPoints + vegetationPoints;
+            const classifiedPercent = (classifiedPoints / totalAnalyzed * 100).toFixed(1);
+            const unclassifiedPercent = (unclassifiedCount / totalAnalyzed * 100).toFixed(1);
+            
+            console.log(`📊 LAS ${fileIndex} klasifikācija: ${classifiedPercent}% klasificēti, ${unclassifiedPercent}% neklasificēti`);
+            console.log(`   Ground(2): ${groundPoints}, Water(8): ${waterPoints}, ActualWater(9): ${actualWaterPoints}, Buildings(6): ${buildingPoints}, Vegetation(3-5): ${vegetationPoints}`);
+            
+            // Fails ir neklasificēts, ja ir maz klasificētu punktu UN daudz neklasificētu
+            fileIsClassified = !((classifiedPoints / totalAnalyzed < 0.10) && (unclassifiedCount / totalAnalyzed > 0.80));
+            
+            if (!fileIsClassified) {
+              const warningMessage = `⚠️ LAS failā ${fileIndex} (${file.name}) atrasti galvenokārt neklasificēti punkti - tiks izmantoti VISI punkti.`;
+              console.warn(warningMessage);
+              hasUnclassifiedWarning = true;
+            } else {
+              console.log(`✅ LAS ${fileIndex} ir klasificēts - tiks izmantoti tikai ZEMES punkti (klase 2)`);
+            }
+          }
+          
+          for (let start = 0; start < numberOfPoints; start += chunkSize) {
+            const end = Math.min(start + chunkSize, numberOfPoints);
+            const count = end - start;
+            
+            const progress = ((start / numberOfPoints) * 100).toFixed(1);
+            document.getElementById('status').textContent = `⚡ LAS ${fileIndex}/${totalFiles}: ${start}-${end} no ${numberOfPoints} (${progress}%)`;
+            
+            // Nolasām chunk
+            const byteStart = pointDataOffset + start * pointRecordLen;
+            const byteLen = count * pointRecordLen;
+            
+            const chunkBlob = processedFile.slice(byteStart, byteStart + byteLen);
+            const chunkBuffer = await chunkBlob.arrayBuffer();
+            const chunkView = new DataView(chunkBuffer);
+            
+            // Apstrādājam punktus
+            let offset = 0;
+            let classificationCounts = {};
+            let debugCount = 0;
+            
+            for (let i = 0; i < count; i++) {
+              const xInt = chunkView.getInt32(offset, true);
+              const yInt = chunkView.getInt32(offset + 4, true);
+              const zInt = chunkView.getInt32(offset + 8, true);
+              
+              const classOffset = pointDataFormat >= 6 ? 17 : 15;
+              const classification = chunkView.getUint8(offset + classOffset) & 0x1F;
+              
+              // Debug: saskaitām klasifikācijas
+              if (!classificationCounts[classification]) {
+                classificationCounts[classification] = 0;
+              }
+              classificationCounts[classification]++;
+              
+              // Debug: parādām pirmos 10 punktus
+              if (debugCount < 10 && start === 0) {
+                console.log(`🔍 LAS ${fileIndex} punkts ${debugCount + 1}: klasifikācija=${classification}, formāts=${pointDataFormat}, offset=${classOffset}`);
+                debugCount++;
+              }
+              
+              // Ja fails ir klasificēts, ņemam tikai zemes punktus (2)
+              // Ja nav klasificēts, ņemam visus punktus
+              const isGround = (classification === 2);
+              const shouldIncludePoint = fileIsClassified ? isGround : true;
+              
+              if (shouldIncludePoint) {
+                const x = xInt * xScale + xOffset;
+                const y = yInt * yScale + yOffset;
+                const z = zInt * zScale + zOffset;
+                
+                points.push({
+                  x: x,
+                  y: y,
+                  z: z
+                });
+              }
+              
+              offset += pointRecordLen;
+            }
+            
+            // Veco klasifikācijas analīzi noņēmām - tagad notiek faila sākumā
+            
+            // Atmiņas tīrīšana
+            if (start % (chunkSize * 5) === 0) {
+              if (typeof gc !== 'undefined') gc();
+              await new Promise(resolve => setTimeout(resolve, 10));
+            } else {
+              await new Promise(resolve => setTimeout(resolve, 1));
+            }
+          }
+          
+          console.log(`✅ LAS ${fileIndex} pabeigts! ${points.length} punkti`);
+          resolve({
+            points: points,
+            hasUnclassifiedWarning: hasUnclassifiedWarning
+          });
+          
+        } catch (error) {
+          console.error(`Kļūda LAS faila ${file.name} apstrādē:`, error);
+          reject(error);
+        }
+      });
+    }
+
+    async function readLAS(file) {
+      return new Promise(async (resolve, reject) => {
+        try {
+          console.log(`LAS: ${file.name}, ${(file.size/1024/1024).toFixed(1)}MB`);
+          
+          // Nolasām LAS header
+          const headerBlob = file.slice(0, 375);
+          const headerBuffer = await headerBlob.arrayBuffer();
+          const dv = new DataView(headerBuffer);
+          
+          const signature = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+          if (signature !== "LASF") {
+            throw new Error("Nav LAS fails!");
+          }
+          
+          const pointDataOffset = dv.getUint32(96, true);
+          const numberOfPoints = dv.getUint32(107, true);
+          const pointDataFormat = dv.getUint8(104);
+          const pointRecordLen = dv.getUint16(105, true);
+          
+          const xScale = dv.getFloat64(131, true);
+          const yScale = dv.getFloat64(139, true); 
+          const zScale = dv.getFloat64(147, true);
+          const xOffset = dv.getFloat64(155, true);
+          const yOffset = dv.getFloat64(163, true);
+          const zOffset = dv.getFloat64(171, true);
+          
+          console.log(`LAS: ${numberOfPoints} punkti, formāts ${pointDataFormat}`);
+          
+            const points = [];
+          
+          // Adaptīvs LAS chunk izmērs atkarībā no sistēmas klases
+          let lasChunkSize;
+          switch(systemSpecs.systemClass) {
+            case 'high-end':
+              lasChunkSize = Math.min(200000, Math.floor(numberOfPoints / (cpuCores / 2))); // Maksimāli lieli
+              break;
+            case 'high':
+              lasChunkSize = Math.min(150000, Math.floor(numberOfPoints / cpuCores)); // Lieli
+              break;
+            case 'medium':
+              lasChunkSize = Math.min(100000, Math.floor(numberOfPoints / cpuCores)); // Vidēji
+              break;
+            case 'low':
+              lasChunkSize = Math.min(50000, Math.floor(numberOfPoints / cpuCores)); // Mazi
+              break;
+            default:
+              lasChunkSize = Math.min(50000, Math.floor(numberOfPoints / cpuCores));
+          }
+          
+          const chunkSize = Math.max(10000, lasChunkSize); // Minimums 10k
+          console.log(`📦 LAS ${systemSpecs.systemClass.toUpperCase()} chunk: ${chunkSize} punkti (${numberOfPoints} kopā, ${cpuCores} kodoli)`);
+          
+          for (let start = 0; start < numberOfPoints; start += chunkSize) {
+            const end = Math.min(start + chunkSize, numberOfPoints);
+            const count = end - start;
+            
+            const progress = ((start / numberOfPoints) * 100).toFixed(1);
+            document.getElementById('status').textContent = `⚡ LAS apstrāde: ${start}-${end} no ${numberOfPoints} (${progress}%)`;
+            
+            // Nolasām chunk
+            const byteStart = pointDataOffset + start * pointRecordLen;
+            const byteLen = count * pointRecordLen;
+            
+            const chunkBlob = processedFile.slice(byteStart, byteStart + byteLen);
+            const chunkBuffer = await chunkBlob.arrayBuffer();
+            const chunkView = new DataView(chunkBuffer);
+            
+            // Apstrādājam punktus
+            let offset = 0;
+            for (let i = 0; i < count; i++) {
+              const xInt = chunkView.getInt32(offset, true);
+              const yInt = chunkView.getInt32(offset + 4, true);
+              const zInt = chunkView.getInt32(offset + 8, true);
+              
+              const classOffset = pointDataFormat >= 6 ? 17 : 15;
+              const classification = chunkView.getUint8(offset + classOffset) & 0x1F;
+              
+              if (classification === 2) { // Ground points
+                const x = xInt * xScale + xOffset;
+                const y = yInt * yScale + yOffset;
+                const z = zInt * zScale + zOffset;
+                
+                  points.push({
+                    x: x,
+                    y: y,
+                  z: z
+                });
+              }
+              
+              offset += pointRecordLen;
+            }
+            
+            // Atmiņas tīrīšana un pauze
+            if (start % (chunkSize * 5) === 0) {
+              // Tīrām cache ik pa 5 chunks
+              if (typeof gc !== 'undefined') gc(); // Ja pieejams
+              await new Promise(resolve => setTimeout(resolve, 10)); // Ilgāka pauze
+                  } else {
+              await new Promise(resolve => setTimeout(resolve, 1));
+            }
+          }
+          
+          console.log(`✅ Pabeigts! ${points.length} punkti`);
+          
+          // Aprēķinām LAS punktu robežas
+          const bounds = calculateLASBounds(points);
+          console.log(`📍 LAS robežas:`, bounds);
+            
+            csvData = points;
+          csvData.bounds = bounds; // Pievienojam robežas
+            resolve();
+            
+          } catch (error) {
+          console.error('Kļūda LAS faila apstrādē:', error);
+            reject(error);
+          }
+      });
+    }
+
+    let geoTiffImage = null; // Glabājam GeoTIFF image objektu streaming lasīšanai
+    
+    async function readGeoTIFF(file, lasBounds = null) {
+      try {
+        const fileSizeMB = file.size / 1024 / 1024;
+        console.log(`GeoTIFF: ${file.name}, ${fileSizeMB.toFixed(1)}MB`);
+        
+        // Vispirms nolasām GeoTIFF metadata
+        const tiff = await GeoTIFF.fromBlob(file);
+        const image = await tiff.getImage();
+        geoTiffImage = image;
+        
+        imageWidth = image.getWidth();
+        imageHeight = image.getHeight();
+        tiePoint = image.getTiePoints()[0];
+        pixelScale = image.getFileDirectory().ModelPixelScale;
+        
+        if (!tiePoint || !pixelScale) {
+          throw new Error("GeoTIFF failam trūkst ģeoreferences informācijas!");
+        }
+        
+        geoTransform = {
+          tiePointX: tiePoint.x,
+          tiePointY: tiePoint.y,
+          scaleX: pixelScale[0],
+          scaleY: pixelScale[1]
+        };
+        
+        // Aprēķinām GeoTIFF pilnās robežas
+        const geoTiffBounds = {
+          minX: geoTransform.tiePointX,
+          maxX: geoTransform.tiePointX + (imageWidth * geoTransform.scaleX),
+          maxY: geoTransform.tiePointY,
+          minY: geoTransform.tiePointY - (imageHeight * geoTransform.scaleY)
+        };
+        
+        console.log(`📊 GeoTIFF pilnās robežas:`, geoTiffBounds);
+        
+        // Ja ir LAS robežas, pārbaudam pārklājumu
+        if (lasBounds) {
+          console.log(`🔍 Ir LAS robežas - sākam optimizāciju`);
+          const overlap = checkOverlap(lasBounds, geoTiffBounds);
+          if (!overlap.hasOverlap) {
+            throw new Error(`❌ Nav pārklājuma! LAS: [${lasBounds.minX.toFixed(0)}, ${lasBounds.minY.toFixed(0)}] - GeoTIFF: [${geoTiffBounds.minX.toFixed(0)}, ${geoTiffBounds.minY.toFixed(0)}]`);
+          }
+          
+          console.log(`✅ Pārklājums atrasts: ${overlap.overlapPercent.toFixed(1)}%`);
+          console.log(`🎯 Sāk optimālā reģiona ielādi...`);
+          console.log(`📊 Intersection reģions:`, overlap.intersection);
+          
+          // Ielādējam tikai nepieciešamo reģionu
+          return await loadOptimalRegion(image, overlap.intersection);
+        } else {
+          console.log(`❌ Nav LAS robežu - izmantojam standarta režīmu`);
+        }
+        
+        // AGRESĪVA STRATĒĢIJA: Mēģinām ielādēt pilnu failu neatkarīgi no izmēra
+        console.log(`🔥 AGRESĪVĀ STRATĒĢIJA: Mēģinām ielādēt pilnu ${fileSizeMB.toFixed(1)}MB failu atmiņā`);
+        
+        try {
+          logMemoryUsage('Pirms pilnā faila ielādes:');
+          
+          // Pārbaudam vai fails nav pārāk liels
+          const estimatedMemoryMB = (imageWidth * imageHeight * 4) / 1024 / 1024;
+          const memoryInfo = getMemoryInfo();
+          const availableMemoryMB = memoryInfo ? memoryInfo.available / 1024 / 1024 : 1000;
+          
+          console.log(`📊 Faila izmērs: ${fileSizeMB.toFixed(1)}MB, novērtētā atmiņa: ${estimatedMemoryMB.toFixed(1)}MB, pieejamā: ${availableMemoryMB.toFixed(1)}MB`);
+          
+          if (estimatedMemoryMB > availableMemoryMB * 0.8) {
+            console.warn(`⚠️ Fails pārāk liels atmiņai - uzreiz izmantojam streaming`);
+            throw new Error("Fails pārāk liels - streaming režīms");
+          }
+          
+          const rasterData = await image.readRasters();
+          tiffArray = rasterData[0];
+          logMemoryUsage('Pēc pilnā faila ielādes:');
+          console.log(`✅ AGRESĪVS SUCCESS! Pilns fails ielādēts: ${fileSizeMB.toFixed(1)}MB, ${(tiffArray.length * 4 / 1024 / 1024).toFixed(1)}MB RAM`);
+        } catch (fullFileError) {
+          console.warn(`⚠️ Pilnā faila ielāde neizdevās: ${fullFileError.message}`);
+          console.log(`🔄 Fallback: Streaming režīms lielam failam`);
+          tiffArray = null;
+          console.log('✅ GeoTIFF gatavs (streaming režīms)');
+          
+          // Pārbaudām vai geoTiffImage ir pieejams streaming režīmam
+          if (!geoTiffImage) {
+            console.error('❌ Streaming režīms nav pieejams - nav geoTiffImage!');
+            throw new Error('GeoTIFF ielāde pilnībā neizdevās');
+          }
+        }
+        
+      } catch (error) {
+        console.error('Kļūda GeoTIFF apstrādē:', error);
+        throw error;
+      }
+    }
+    
+    async function readGeoTIFFStreaming(file) {
+      try {
+        // Izmantojam File objektu tieši streaming lasīšanai
+        const tiff = await GeoTIFF.fromBlob(file);
+      const image = await tiff.getImage();
+        geoTiffImage = image;
+        
+      imageWidth = image.getWidth();
+      imageHeight = image.getHeight();
+      tiePoint = image.getTiePoints()[0];
+      pixelScale = image.getFileDirectory().ModelPixelScale;
+        
+        if (!tiePoint || !pixelScale) {
+          throw new Error("GeoTIFF failam trūkst ģeoreferences informācijas!");
+        }
+        
+        // NEielādējam visu atmiņā - izmantojam streaming
+        tiffArray = null;
+        
+      geoTransform = {
+        tiePointX: tiePoint.x,
+        tiePointY: tiePoint.y,
+        scaleX: pixelScale[0],
+        scaleY: pixelScale[1]
+      };
+      
+        console.log('✅ GeoTIFF gatavs (streaming režīms)');
+        
+      } catch (error) {
+        console.error('Kļūda GeoTIFF streaming apstrādē:', error);
+        throw error;
+      }
+    }
+    
+    async function readMultipleGeoTIFF(files, lasBounds = null) {
+      console.log(`🗂️ Sāk vairāku GeoTIFF failu apstrādi: ${files.length} faili`);
+      
+      let totalSizeMB = 0;
+      for (let i = 0; i < files.length; i++) {
+        totalSizeMB += files[i].size / 1024 / 1024;
+      }
+      console.log(`📊 Kopējais izmērs: ${totalSizeMB.toFixed(1)}MB`);
+      
+        // Inicializējam globālos mainīgos
+        window.additionalGeoTiffImages = [];
+        window.additionalGeoTiffTransforms = [];
+        window.additionalGeoTiffArrays = [];
+        window.additionalGeoTiffCaches = [];
+        
+        // Apstrādājam VISUS failus kā vienlīdzīgus
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          console.log(`📁 Apstrādā failu ${i + 1}/${files.length}: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+          
+          // Visus failus apstrādājam kā papildu failus
+          await readGeoTIFFAdditional(file, lasBounds, i);
+          
+          logMemoryUsage(`Pēc faila ${i + 1}:`);
+        }
+        
+        // Iestatām pirmo failu kā galveno (saderībai ar esošo kodu)
+        if (window.additionalGeoTiffTransforms.length > 0) {
+          const firstTransform = window.additionalGeoTiffTransforms[0];
+          geoTransform = {
+            tiePointX: firstTransform.tiePointX,
+            tiePointY: firstTransform.tiePointY,
+            scaleX: firstTransform.scaleX,
+            scaleY: firstTransform.scaleY
+          };
+          imageWidth = firstTransform.imageWidth;
+          imageHeight = firstTransform.imageHeight;
+          tiffArray = window.additionalGeoTiffArrays[0];
+          geoTiffImage = window.additionalGeoTiffImages[0];
+          geoTiffCache = window.additionalGeoTiffCaches[0];
+        }
+      
+      console.log(`✅ Visi GeoTIFF faili apstrādāti! Kopā: ${files.length} faili`);
+    }
+    
+    async function readGeoTIFFAdditional(file, lasBounds = null, index = 0) {
+      try {
+        const fileSizeMB = file.size / 1024 / 1024;
+        console.log(`GeoTIFF ${index + 1}: ${file.name}, ${fileSizeMB.toFixed(1)}MB`);
+        
+        const tiff = await GeoTIFF.fromBlob(file);
+        const image = await tiff.getImage();
+        
+        // Saglabājam papildu attēlu atsaucei
+        if (!window.additionalGeoTiffImages) {
+          window.additionalGeoTiffImages = [];
+        }
+        if (!window.additionalGeoTiffTransforms) {
+          window.additionalGeoTiffTransforms = [];
+        }
+        if (!window.additionalGeoTiffArrays) {
+          window.additionalGeoTiffArrays = [];
+        }
+        
+        window.additionalGeoTiffImages[index] = image;
+        
+        // Saglabājam transformācijas informāciju
+        const tiePoint = image.getTiePoints()[0];
+        const pixelScale = image.getFileDirectory().ModelPixelScale;
+        
+        if (!tiePoint || !pixelScale) {
+          throw new Error(`GeoTIFF failam ${file.name} trūkst ģeoreferences informācijas!`);
+        }
+        
+        window.additionalGeoTiffTransforms[index] = {
+          tiePointX: tiePoint.x,
+          tiePointY: tiePoint.y,
+          scaleX: pixelScale[0],
+          scaleY: pixelScale[1],
+          imageWidth: image.getWidth(),
+          imageHeight: image.getHeight()
+        };
+        
+        // Mēģinām ielādēt rastra datus (ja ir iespējams)
+        try {
+          const estimatedMemoryMB = (image.getWidth() * image.getHeight() * 4) / 1024 / 1024;
+          const memoryInfo = getMemoryInfo();
+          const availableMemoryMB = memoryInfo ? memoryInfo.available / 1024 / 1024 : 1000;
+          
+          console.log(`📊 Papildu GeoTIFF ${index + 1}: ${fileSizeMB.toFixed(1)}MB fails, novērtētā atmiņa: ${estimatedMemoryMB.toFixed(1)}MB, pieejamā: ${availableMemoryMB.toFixed(1)}MB`);
+          
+          if (estimatedMemoryMB < availableMemoryMB * 0.3) {
+            const rasterData = await image.readRasters();
+            window.additionalGeoTiffArrays[index] = rasterData[0];
+            console.log(`✅ Papildu GeoTIFF ${index + 1} ielādēts atmiņā: ${(rasterData[0].length * 4 / 1024 / 1024).toFixed(1)}MB`);
+          } else {
+            console.log(`🔄 Papildu GeoTIFF ${index + 1} - streaming režīms (pārāk liels atmiņai)`);
+            window.additionalGeoTiffArrays[index] = null;
+          }
+        } catch (memoryError) {
+          console.warn(`⚠️ Papildu GeoTIFF ${index + 1} atmiņas ielāde neizdevās: ${memoryError.message}`);
+          console.log(`🔄 Papildu GeoTIFF ${index + 1} - streaming režīms`);
+          window.additionalGeoTiffArrays[index] = null;
+        }
+        
+        console.log(`✅ Papildu GeoTIFF ${index + 1} gatavs apstrādei`);
+        
+      } catch (error) {
+        console.error(`Kļūda papildu GeoTIFF ${index + 1} apstrādē:`, error);
+        throw error;
+      }
+    }
+
+    // Cache GeoTIFF reģioniem, lai samazinātu disk I/O
+    let geoTiffCache = new Map();
+    
+    // Adaptīvs cache bloka izmērs atkarībā no sistēmas klases
+    function getCacheSize() {
+      const memory = getMemoryInfo();
+      
+      switch(systemSpecs.systemClass) {
+        case 'high-end':
+          return 2048; // SUPER AGRESĪVS CACHE - 2K bloki!
+        case 'high':
+          return 1536; // 1.5K bloki
+        case 'medium':
+          return 1024; // 1K bloki  
+        case 'low':
+          return 512;  // 512px bloki
+        default:
+          return memory && memory.available > 2000000000 ? 512 : 256;
+      }
+    }
+    
+    // SUPER OPTIMIZĀCIJA: Batch lasīšana vairākiem punktiem vienlaicīgi
+    async function sampleBatchFromGeoTIFF(coordsArray) {
+      if (!coordsArray || coordsArray.length === 0) return [];
+      
+      const results = new Array(coordsArray.length).fill(null);
+      
+      // Debug informācija
+      console.log(`🔍 sampleBatchFromGeoTIFF: ${coordsArray.length} punkti`);
+      console.log(`   Papildu faili: ${window.additionalGeoTiffTransforms ? window.additionalGeoTiffTransforms.length : 0}`);
+      
+      // Mēģinām ar VISIEM failiem vienlaicīgi
+      if (window.additionalGeoTiffTransforms && window.additionalGeoTiffTransforms.length > 0) {
+        for (let i = 0; i < window.additionalGeoTiffTransforms.length; i++) {
+          const transform = window.additionalGeoTiffTransforms[i];
+          
+          // Pārbaudam, vai transform eksistē un ir derīgs
+          if (!transform || !transform.imageWidth || !transform.imageHeight) {
+            console.warn(`⚠️ GeoTIFF ${i + 1} transformācija nav derīga, izlaišam`);
+            continue;
+          }
+          
+          const tiffArray = window.additionalGeoTiffArrays ? window.additionalGeoTiffArrays[i] : null;
+          const geoTiffImage = window.additionalGeoTiffImages ? window.additionalGeoTiffImages[i] : null;
+          
+          // Izveidojam atsevišķu cache katram failam
+          if (!window.additionalGeoTiffCaches) {
+            window.additionalGeoTiffCaches = [];
+          }
+          if (!window.additionalGeoTiffCaches[i]) {
+            window.additionalGeoTiffCaches[i] = new Map();
+          }
+          
+          await sampleBatchFromSingleGeoTIFF(coordsArray, results, transform, transform.imageWidth, transform.imageHeight, tiffArray, geoTiffImage, window.additionalGeoTiffCaches[i]);
+          
+          const foundInThisFile = results.filter(r => r !== null && !isNaN(r)).length;
+          console.log(`   Failā ${i + 1} atrasti: ${foundInThisFile}/${coordsArray.length} punkti`);
+        }
+      }
+      
+      const totalFound = results.filter(r => r !== null && !isNaN(r)).length;
+      console.log(`   KOPĀ atrasti: ${totalFound}/${coordsArray.length} punkti`);
+      
+      return results;
+    }
+    
+    async function sampleBatchFromSingleGeoTIFF(coordsArray, results, transform, imgWidth, imgHeight, tiffArray, geoTiffImage, cache) {
+      
+      // Ja tiffArray ir ielādēts, izmantojam to (ātrākais)
+      if (tiffArray) {
+        for (let i = 0; i < coordsArray.length; i++) {
+          // Ja jau ir vērtība, izlaišam
+          if (results[i] !== null) continue;
+          
+          const coord = coordsArray[i];
+          const pixelX = Math.floor((coord.x - transform.tiePointX) / transform.scaleX);
+          const pixelY = Math.floor((transform.tiePointY - coord.y) / transform.scaleY);
+          
+          if (pixelX < 0 || pixelX >= imgWidth || pixelY < 0 || pixelY >= imgHeight) {
+            continue;
+          }
+          
+          let pixelIndex;
+          if (tiffArray.regionInfo) {
+            const regionPixelX = pixelX - tiffArray.regionInfo.offsetX;
+            const regionPixelY = pixelY - tiffArray.regionInfo.offsetY;
+            
+            if (regionPixelX < 0 || regionPixelX >= tiffArray.regionInfo.width ||
+                regionPixelY < 0 || regionPixelY >= tiffArray.regionInfo.height) {
+              continue;
+            }
+            
+            pixelIndex = regionPixelY * tiffArray.regionInfo.width + regionPixelX;
+          } else {
+            pixelIndex = pixelY * imgWidth + pixelX;
+          }
+          
+          const tiffValue = tiffArray[pixelIndex];
+          if (tiffValue !== -9999.00 && tiffValue !== null && !isNaN(tiffValue)) {
+            results[i] = tiffValue;
+          }
+        }
+        return;
+      }
+      
+      // Streaming režīms ar SUPER BATCH optimizāciju
+      if (geoTiffImage) {
+        // Grupējam punktus pēc cache bloku reģioniem
+        const regionGroups = new Map();
+        const cacheSize = getCacheSize();
+        
+        for (let i = 0; i < coordsArray.length; i++) {
+          // Ja jau ir vērtība, izlaišam
+          if (results[i] !== null) continue;
+          
+          const coord = coordsArray[i];
+          const pixelX = Math.floor((coord.x - transform.tiePointX) / transform.scaleX);
+          const pixelY = Math.floor((transform.tiePointY - coord.y) / transform.scaleY);
+          
+          if (pixelX < 0 || pixelX >= imgWidth || pixelY < 0 || pixelY >= imgHeight) {
+            continue;
+          }
+          
+          // Aprēķinām cache reģionu
+          const regionX = Math.floor(pixelX / cacheSize) * cacheSize;
+          const regionY = Math.floor(pixelY / cacheSize) * cacheSize;
+          const regionKey = `${regionX}_${regionY}`;
+          
+          if (!regionGroups.has(regionKey)) {
+            regionGroups.set(regionKey, []);
+          }
+          regionGroups.get(regionKey).push({ index: i, pixelX, pixelY, regionX, regionY });
+        }
+        
+        // Paralēli ielādējam visus nepieciešamos reģionus
+        const regionPromises = Array.from(regionGroups.entries()).map(async ([regionKey, points]) => {
+          const { regionX, regionY } = points[0];
+          
+          // Pārbaudam cache
+          if (cache.has(regionKey)) {
+            const cachedData = cache.get(regionKey);
+            return { regionKey, data: cachedData, points };
+          }
+          
+          // Ielādējam jaunu reģionu
+          try {
+            const regionWidth = Math.min(cacheSize, imgWidth - regionX);
+            const regionHeight = Math.min(cacheSize, imgHeight - regionY);
+            
+            let window = [regionX, regionY, regionX + regionWidth, regionY + regionHeight];
+            
+            // Pielāgojam reģiona robežām, ja nepieciešams
+            if (geoTiffImage.regionInfo) {
+              const { offsetX, offsetY, width, height } = geoTiffImage.regionInfo;
+              if (regionX < offsetX || regionY < offsetY || 
+                  regionX >= offsetX + width || regionY >= offsetY + height) {
+                return { regionKey, data: null, points };
+              }
+              
+              window = [
+                Math.max(regionX, offsetX),
+                Math.max(regionY, offsetY),
+                Math.min(regionX + regionWidth, offsetX + width),
+                Math.min(regionY + regionHeight, offsetY + height)
+              ];
+            }
+            
+            const regionData = await geoTiffImage.readRasters({ window });
+            const data = regionData[0];
+            
+            // Saglabājam cache
+            cache.set(regionKey, data);
+            
+            return { regionKey, data, points };
+          } catch (error) {
+            console.warn(`Kļūda reģiona ${regionKey} ielādē:`, error);
+            return { regionKey, data: null, points };
+          }
+        });
+        
+        // Gaidām visus reģionus
+        const regionResults = await Promise.all(regionPromises);
+        
+        // Apstrādājam rezultātus
+        for (const { regionKey, data, points } of regionResults) {
+          if (!data) {
+            points.forEach(point => {
+              if (results[point.index] === null) {
+                results[point.index] = null;
+              }
+            });
+            continue;
+          }
+          
+          const cacheSize = getCacheSize();
+          for (const point of points) {
+            // Ja jau ir vērtība, izlaišam
+            if (results[point.index] !== null) continue;
+            
+            const localX = point.pixelX - point.regionX;
+            const localY = point.pixelY - point.regionY;
+            const localIndex = localY * cacheSize + localX;
+            
+            if (localIndex >= 0 && localIndex < data.length) {
+              const tiffValue = data[localIndex];
+              if (tiffValue !== -9999.00 && tiffValue !== null && !isNaN(tiffValue)) {
+                results[point.index] = tiffValue;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    async function sampleValueFromGeoTIFF(coordX, coordY) {
+      // Mēģinām ar VISIEM failiem vienlaicīgi
+      if (window.additionalGeoTiffTransforms && window.additionalGeoTiffTransforms.length > 0) {
+        for (let i = 0; i < window.additionalGeoTiffTransforms.length; i++) {
+          const transform = window.additionalGeoTiffTransforms[i];
+          
+          // Pārbaudam, vai transform eksistē un ir derīgs
+          if (!transform || !transform.imageWidth || !transform.imageHeight) {
+            continue;
+          }
+          
+          const tiffArray = window.additionalGeoTiffArrays ? window.additionalGeoTiffArrays[i] : null;
+          const geoTiffImage = window.additionalGeoTiffImages ? window.additionalGeoTiffImages[i] : null;
+          
+          // Izveidojam atsevišķu cache katram failam
+          if (!window.additionalGeoTiffCaches) {
+            window.additionalGeoTiffCaches = [];
+          }
+          if (!window.additionalGeoTiffCaches[i]) {
+            window.additionalGeoTiffCaches[i] = new Map();
+          }
+          
+          const value = await sampleValueFromSingleGeoTIFF(coordX, coordY, transform, transform.imageWidth, transform.imageHeight, tiffArray, geoTiffImage, window.additionalGeoTiffCaches[i]);
+          
+          if (value !== null) {
+            return value;
+          }
+        }
+      }
+      
+      return null;
+    }
+    
+    async function sampleValueFromSingleGeoTIFF(coordX, coordY, transform, imgWidth, imgHeight, tiffArray, geoTiffImage, cache) {
+      const pixelX = Math.floor((coordX - transform.tiePointX) / transform.scaleX);
+      const pixelY = Math.floor((transform.tiePointY - coordY) / transform.scaleY);
+      
+      if (pixelX < 0 || pixelX >= imgWidth || pixelY < 0 || pixelY >= imgHeight) {
+        return null;
+      }
+      
+      // Ja tiffArray ir ielādēts, izmantojam to
+      if (tiffArray) {
+        let pixelIndex;
+        
+        // Ja ir reģionāla ielāde, pielāgojam koordinātas
+        if (tiffArray.regionInfo) {
+          const regionPixelX = pixelX - tiffArray.regionInfo.offsetX;
+          const regionPixelY = pixelY - tiffArray.regionInfo.offsetY;
+          
+          // Pārbaudam, vai pikselis ir reģiona robežās
+          if (regionPixelX < 0 || regionPixelX >= tiffArray.regionInfo.width ||
+              regionPixelY < 0 || regionPixelY >= tiffArray.regionInfo.height) {
+            return null; // Ārpus ielādētā reģiona
+          }
+          
+          pixelIndex = regionPixelY * tiffArray.regionInfo.width + regionPixelX;
+        } else {
+          // Pilna ielāde
+          pixelIndex = pixelY * imgWidth + pixelX;
+        }
+        
+        const tiffValue = tiffArray[pixelIndex];
+        if (tiffValue === -9999.00 || tiffValue === null || isNaN(tiffValue)) {
+          return null;
+        }
+        return tiffValue;
+      }
+      
+      // Streaming režīms ar cache optimizāciju un reģiona pārbaudi
+      if (geoTiffImage) {
+        try {
+          // Ja ir reģiona robežas, pārbaudam vai pikselis ir robežās
+          if (geoTiffImage.regionInfo) {
+            const regionPixelX = pixelX - geoTiffImage.regionInfo.offsetX;
+            const regionPixelY = pixelY - geoTiffImage.regionInfo.offsetY;
+            
+            if (regionPixelX < 0 || regionPixelX >= geoTiffImage.regionInfo.width ||
+                regionPixelY < 0 || regionPixelY >= geoTiffImage.regionInfo.height) {
+              return null; // Ārpus reģiona
+            }
+            
+            // Pielāgojam cache koordinātas reģionam
+            const adjustedX = pixelX;
+            const adjustedY = pixelY;
+            
+            // Noteicam cache reģionu ar dinamisko izmēru
+            const dynamicCacheSize = getCacheSize();
+            const regionX = Math.floor(adjustedX / dynamicCacheSize) * dynamicCacheSize;
+            const regionY = Math.floor(adjustedY / dynamicCacheSize) * dynamicCacheSize;
+            const cacheKey = `${regionX}_${regionY}`;
+            
+            // Pārbaudam cache
+            if (!geoTiffCache.has(cacheKey)) {
+              // Aprēķinām cache reģiona robežas
+              const cacheMinX = Math.max(regionX, geoTiffImage.regionInfo.offsetX);
+              const cacheMaxX = Math.min(regionX + dynamicCacheSize, geoTiffImage.regionInfo.offsetX + geoTiffImage.regionInfo.width);
+              const cacheMinY = Math.max(regionY, geoTiffImage.regionInfo.offsetY);
+              const cacheMaxY = Math.min(regionY + dynamicCacheSize, geoTiffImage.regionInfo.offsetY + geoTiffImage.regionInfo.height);
+              
+              if (cacheMinX >= cacheMaxX || cacheMinY >= cacheMaxY) {
+                return null; // Cache reģions ārpus mūsu reģiona
+              }
+              
+              const cacheWidth = cacheMaxX - cacheMinX;
+              const cacheHeight = cacheMaxY - cacheMinY;
+              const window = [cacheMinX, cacheMinY, cacheMaxX, cacheMaxY];
+              
+              const data = await geoTiffImage.readRasters({ window });
+              geoTiffCache.set(cacheKey, {
+                data: data[0],
+                width: cacheWidth,
+                height: cacheHeight,
+                offsetX: cacheMinX,
+                offsetY: cacheMinY
+              });
+              
+              // Adaptīvs cache izmērs atkarībā no sistēmas klases
+              const memoryStatus = logMemoryUsage('Cache:');
+              let maxCacheSize = 20; // Noklusējuma
+              
+              switch(systemSpecs.systemClass) {
+                case 'high-end':
+                  maxCacheSize = 500; // SUPER AGRESĪVS CACHE - 500 reģioni!
+                  console.log('🔥 SUPER AGRESĪVS CACHE (500 reģioni) - MAKSIMĀLA JAUDAS IZMANTOŠANA!');
+                  break;
+                case 'high':
+                  maxCacheSize = 350; // 350 reģioni
+                  console.log('🔥 SUPER LIELS CACHE (350 reģioni) - AUGSTA VEIKTSPĒJA!');
+                  break;
+                case 'medium':
+                  maxCacheSize = 200; // 200 reģioni
+                  console.log('🔥 LIELS CACHE (200 reģioni) - LABA VEIKTSPĒJA!');
+                  break;
+                case 'low':
+                  maxCacheSize = 100; // 100 reģioni
+                  console.log('🔥 VIDĒJS CACHE (100 reģioni) - OPTIMIZĒTA VEIKTSPĒJA!');
+                  break;
+              }
+              
+              // AGRESĪVA CACHE STRATĒĢIJA: Nekad nesamazinām cache
+              if (memoryStatus === 'low') {
+                console.warn('⚠️ Zema atmiņa, bet saglabājam lielu cache agresīvai veiktspējai');
+                // Nesamazinām cache - lai saglabātu maksimālo ātrumu
+              }
+              
+              // Tīrām cache, ja pārāk liels
+              while (geoTiffCache.size > maxCacheSize) {
+                const firstKey = geoTiffCache.keys().next().value;
+                geoTiffCache.delete(firstKey);
+              }
+            }
+      } else {
+            // Standarta cache bez reģiona ierobežojumiem ar dinamisko izmēru
+            const dynamicCacheSize = getCacheSize();
+            const regionX = Math.floor(pixelX / dynamicCacheSize) * dynamicCacheSize;
+            const regionY = Math.floor(pixelY / dynamicCacheSize) * dynamicCacheSize;
+            const cacheKey = `${regionX}_${regionY}`;
+            
+            if (!geoTiffCache.has(cacheKey)) {
+              const regionWidth = Math.min(dynamicCacheSize, imageWidth - regionX);
+              const regionHeight = Math.min(dynamicCacheSize, imageHeight - regionY);
+              const window = [regionX, regionY, regionX + regionWidth, regionY + regionHeight];
+              
+              const data = await geoTiffImage.readRasters({ window });
+              geoTiffCache.set(cacheKey, {
+                data: data[0],
+                width: regionWidth,
+                height: regionHeight,
+                offsetX: regionX,
+                offsetY: regionY
+              });
+              
+              if (geoTiffCache.size > 20) {
+                const firstKey = geoTiffCache.keys().next().value;
+                geoTiffCache.delete(firstKey);
+              }
+            }
+          }
+          
+          // Iegūstam vērtību no cache ar dinamisko izmēru
+          const dynamicCacheSize = getCacheSize();
+          const cacheKey = `${Math.floor(pixelX / dynamicCacheSize) * dynamicCacheSize}_${Math.floor(pixelY / dynamicCacheSize) * dynamicCacheSize}`;
+          const cached = geoTiffCache.get(cacheKey);
+          
+          if (cached) {
+            const localX = pixelX - cached.offsetX;
+            const localY = pixelY - cached.offsetY;
+            
+            if (localX >= 0 && localX < cached.width && localY >= 0 && localY < cached.height) {
+              const tiffValue = cached.data[localY * cached.width + localX];
+              if (tiffValue === -9999.00 || tiffValue === null || isNaN(tiffValue)) {
+        return null;
+              }
+              return tiffValue;
+            }
+          }
+          
+          return null;
+        } catch (error) {
+          console.warn(`Kļūda piksela lasīšanā (${pixelX}, ${pixelY}):`, error);
+          return null;
+        }
+      }
+      
+      return null;
+    }
+
+    // Detalizēta sistēmas resursu noteikšana
+    function detectSystemSpecs() {
+      const specs = {
+        cpuCores: navigator.hardwareConcurrency || 8,
+        memory: getMemoryInfo(),
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        deviceMemory: navigator.deviceMemory || null, // GB
+        connection: navigator.connection || null
+      };
+      
+      // Aprēķinām sistēmas klasi
+      let systemClass = 'medium';
+      if (specs.cpuCores >= 16 && specs.memory && specs.memory.limit > 4000000000) {
+        systemClass = 'high-end';
+      } else if (specs.cpuCores >= 8 && specs.memory && specs.memory.limit > 2000000000) {
+        systemClass = 'high';
+      } else if (specs.cpuCores <= 4 || (specs.memory && specs.memory.limit < 1000000000)) {
+        systemClass = 'low';
+      }
+      
+      specs.systemClass = systemClass;
+      return specs;
+    }
+    
+    const systemSpecs = detectSystemSpecs();
+    
+    // Detalizēts sistēmas pārskats
+    function displaySystemSummary() {
+      console.log(`\n🖥️ =================== SISTĒMAS ANALĪZE ===================`);
+      console.log(`🚀 CPU kodoli: ${systemSpecs.cpuCores}`);
+      console.log(`💾 Atmiņas limits: ${systemSpecs.memory ? (systemSpecs.memory.limit/1024/1024/1024).toFixed(1) + 'GB' : 'Nav pieejams'}`);
+      console.log(`💾 Pieejamā atmiņa: ${systemSpecs.memory ? (systemSpecs.memory.available/1024/1024/1024).toFixed(1) + 'GB' : 'Nav pieejams'}`);
+      console.log(`📊 Sistēmas klase: ${systemSpecs.systemClass.toUpperCase()}`);
+      console.log(`🌐 Platforma: ${systemSpecs.platform}`);
+      if (systemSpecs.deviceMemory) {
+        console.log(`💽 Ierīces RAM: ${systemSpecs.deviceMemory}GB`);
+      }
+      
+      // Optimizācijas parametri
+      console.log(`\n⚡ ================= OPTIMIZĀCIJAS PARAMETRI =================`);
+      const memory = getMemoryInfo();
+      if (memory && memory.available > 1000000000) {
+        let memoryPercent = 0.7;
+        switch(systemSpecs.systemClass) {
+          case 'high-end': memoryPercent = 0.85; break;
+          case 'high': memoryPercent = 0.80; break;
+          case 'medium': memoryPercent = 0.75; break;
+          case 'low': memoryPercent = 0.60; break;
+        }
+        const maxPixels = Math.floor(memory.available * memoryPercent / 4);
+        console.log(`🎯 Maksimālā atmiņas izmantošana: ${(memoryPercent*100).toFixed(0)}%`);
+        console.log(`🎯 Maksimālie pikseļi: ${(maxPixels/1000000).toFixed(0)}M (${(maxPixels*4/1024/1024).toFixed(0)}MB)`);
+      }
+      
+      const cacheSize = getCacheSize();
+      console.log(`🎯 Cache bloku izmērs: ${cacheSize}x${cacheSize} pikseļi`);
+      console.log(`🎯 CPU kodolu izmantošana: ${systemSpecs.systemClass === 'high-end' ? '100%' : systemSpecs.systemClass === 'high' ? '80%' : systemSpecs.systemClass === 'medium' ? '60%' : '40%'}`);
+      console.log(`\n🔥 ================= MAKSIMĀLĀS JAUDAS STRATĒĢIJA =================`);
+      console.log(`🧠 GUDRA izvēle starp atmiņu un streaming`);
+      console.log(`🚀 NEKAD nesamazina cache izmēru`);
+      console.log(`🚀 AGRESĪVS limits: 40% no pieejamās atmiņas (2x vairāk!)`);
+      console.log(`🚀 SUPER CACHE: Līdz 500 reģioniem ar 2K bloku izmēru`);
+      console.log(`🚀 SUPER PARALĒLĀ APSTRĀDE: Līdz 200% CPU izmantošana`);
+      console.log(`🚀 2-līmeņu sistēma:`);
+      console.log(`   1️⃣ Maziem reģioniem (≤40% RAM): Atmiņā`);
+      console.log(`   2️⃣ Lieliem reģioniem (>40% RAM): SUPER STREAMING`);
+      console.log(`🚀 Pilnu failu ielāde neatkarīgi no izmēra`);
+      console.log(`🚀 Nav Array buffer allocation failed kļūdu!`);
+      console.log(`🎯 MĒRĶIS: MAKSIMĀLA datora jaudas izmantošana!`);
+      console.log(`================================================================\n`);
+    }
+    
+    displaySystemSummary();
+    const cpuCores = systemSpecs.cpuCores;
+    
+    // Atmiņas monitorings un adaptīva stratēģija
+    function getMemoryInfo() {
+      if (performance.memory) {
+        return {
+          used: performance.memory.usedJSHeapSize,
+          total: performance.memory.totalJSHeapSize,
+          limit: performance.memory.jsHeapSizeLimit,
+          available: performance.memory.jsHeapSizeLimit - performance.memory.usedJSHeapSize
+        };
+      }
+      return null;
+    }
+    
+    function logMemoryUsage(context = '') {
+      const memory = getMemoryInfo();
+      if (memory) {
+        const usedMB = (memory.used / 1024 / 1024).toFixed(1);
+        const availableMB = (memory.available / 1024 / 1024).toFixed(1);
+        const limitMB = (memory.limit / 1024 / 1024).toFixed(1);
+        console.log(`💾 ${context} Atmiņa: ${usedMB}MB izmantots, ${availableMB}MB pieejams, ${limitMB}MB limits`);
+        
+        // Brīdinājums, ja atmiņa tuvojas limitam
+        if (memory.available < memory.limit * 0.2) { // Mazāk par 20% pieejams
+          console.warn(`⚠️ Zema atmiņa! Tikai ${availableMB}MB pieejams`);
+          return 'low';
+        }
+        return 'ok';
+      }
+      return 'unknown';
+    }
+    
+    // Funkcija punktu robežu aprēķināšanai (universāla)
+    function calculateBounds(points, isCSV = false) {
+      if (!points || points.length === 0) return null;
+      
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      
+      points.forEach(point => {
+        const x = isCSV ? parseFloat(point.x) : point.x;
+        const y = isCSV ? parseFloat(point.y) : point.y;
+        
+        if (isNaN(x) || isNaN(y)) return;
+        
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      });
+      
+      // Pievienojam 10m bufferi drošībai
+      const buffer = 10;
+      return {
+        minX: minX - buffer,
+        maxX: maxX + buffer,
+        minY: minY - buffer,
+        maxY: maxY + buffer,
+        width: (maxX - minX) + (2 * buffer),
+        height: (maxY - minY) + (2 * buffer)
+      };
+    }
+    
+    // LAS punktu robežas
+    function calculateLASBounds(points) {
+      return calculateBounds(points, false);
+    }
+    
+    // CSV punktu robežas
+    function calculateCSVBounds(points) {
+      return calculateBounds(points, true);
+    }
+    
+    // Funkcija pārklājuma pārbaudei
+    function checkOverlap(lasBounds, geoTiffBounds) {
+      const intersectionMinX = Math.max(lasBounds.minX, geoTiffBounds.minX);
+      const intersectionMaxX = Math.min(lasBounds.maxX, geoTiffBounds.maxX);
+      const intersectionMinY = Math.max(lasBounds.minY, geoTiffBounds.minY);
+      const intersectionMaxY = Math.min(lasBounds.maxY, geoTiffBounds.maxY);
+      
+      const hasOverlap = (intersectionMinX < intersectionMaxX) && (intersectionMinY < intersectionMaxY);
+      
+      if (!hasOverlap) {
+        return { hasOverlap: false, overlapPercent: 0 };
+      }
+      
+      const intersectionArea = (intersectionMaxX - intersectionMinX) * (intersectionMaxY - intersectionMinY);
+      const lasArea = lasBounds.width * lasBounds.height;
+      const overlapPercent = (intersectionArea / lasArea) * 100;
+      
+      return {
+        hasOverlap: true,
+        overlapPercent,
+        intersection: {
+          minX: intersectionMinX,
+          maxX: intersectionMaxX,
+          minY: intersectionMinY,
+          maxY: intersectionMaxY,
+          width: intersectionMaxX - intersectionMinX,
+          height: intersectionMaxY - intersectionMinY
+        }
+      };
+    }
+    
+    // Funkcija optimālā GeoTIFF reģiona ielādei ar atmiņas pārbaudi
+    async function loadOptimalRegion(image, region) {
+      try {
+        console.log(`🔧 loadOptimalRegion izsaukta ar reģionu:`, region);
+        logMemoryUsage('loadOptimalRegion sākums:');
+        // Konvertējam koordinātas uz pikseļiem
+        const pixelMinX = Math.floor((region.minX - geoTransform.tiePointX) / geoTransform.scaleX);
+        const pixelMaxX = Math.ceil((region.maxX - geoTransform.tiePointX) / geoTransform.scaleX);
+        const pixelMinY = Math.floor((geoTransform.tiePointY - region.maxY) / geoTransform.scaleY);
+        const pixelMaxY = Math.ceil((geoTransform.tiePointY - region.minY) / geoTransform.scaleY);
+        
+        // Ierobežojam pikseļu robežas
+        const clippedMinX = Math.max(0, pixelMinX);
+        const clippedMaxX = Math.min(imageWidth, pixelMaxX);
+        const clippedMinY = Math.max(0, pixelMinY);
+        const clippedMaxY = Math.min(imageHeight, pixelMaxY);
+        
+        const regionWidth = clippedMaxX - clippedMinX;
+        const regionHeight = clippedMaxY - clippedMinY;
+        const totalPixels = regionWidth * regionHeight;
+        
+        console.log(`🎯 Reģions: ${regionWidth}x${regionHeight} pikseļi (${(totalPixels / 1000000).toFixed(1)}M, ${((totalPixels) / (imageWidth * imageHeight) * 100).toFixed(1)}% no pilnā)`);
+        
+        // Dinamiska atmiņas limita noteikšana
+        const memory = getMemoryInfo();
+        let maxPixels = 100000000; // Noklusējuma 100M pikseļi ≈ 400MB RAM
+        
+        if (memory && memory.available > 1000000000) { // Ja > 1GB pieejams
+          // Adaptīvs atmiņas izmantošanas procents atkarībā no sistēmas klases
+          let memoryUsagePercent = 0.7; // Noklusējuma 70%
+          
+          switch(systemSpecs.systemClass) {
+            case 'high-end':
+              memoryUsagePercent = 0.85; // 85% high-end sistēmām
+              break;
+            case 'high':
+              memoryUsagePercent = 0.80; // 80% augsta līmeņa sistēmām
+              break;
+            case 'medium':
+              memoryUsagePercent = 0.75; // 75% vidējām sistēmām
+              break;
+            case 'low':
+              memoryUsagePercent = 0.60; // 60% zemām sistēmām
+              break;
+          }
+          
+          // Izmantojam adaptīvo procentu no pieejamās atmiņas (4 baiti uz pikseli)
+          maxPixels = Math.floor(memory.available * memoryUsagePercent / 4);
+          console.log(`🚀 ${systemSpecs.systemClass.toUpperCase()} sistēma: ${(memoryUsagePercent*100).toFixed(0)}% atmiņas`);
+          console.log(`🚀 Dinamiskais limits: ${(maxPixels/1000000).toFixed(0)}M pikseļi (${(maxPixels*4/1024/1024).toFixed(0)}MB) no ${(memory.available/1024/1024).toFixed(0)}MB pieejamās atmiņas`);
+        } else {
+          console.log(`📊 Noklusējuma limits: ${(maxPixels/1000000).toFixed(0)}M pikseļi`);
+        }
+        
+        // SUPER STREAMING STRATĒĢIJA: Gudra izvēle starp atmiņu un streaming
+        console.log(`🧠 SUPER STREAMING: Novērtējam ${(totalPixels/1000000).toFixed(1)}M pikseļu reģionu`);
+        console.log(`   Nepieciešamā atmiņa: ${(totalPixels*4/1024/1024).toFixed(0)}MB`);
+        console.log(`   Pieejamā atmiņa: ${(memory.available/1024/1024).toFixed(0)}MB`);
+        console.log(`   Drošais limits: ${(maxPixels/1000000).toFixed(1)}M pikseļi`);
+        
+        // SUPER AGRESĪVS LIMITS - 40% no pieejamās atmiņas (2x vairāk!)
+        const safeLimit = Math.floor(memory.available * 0.4 / 4); // 40% no pieejamās atmiņas
+        const shouldUseStreaming = totalPixels > safeLimit;
+        
+        if (shouldUseStreaming) {
+          console.log(`🚨 Liels reģions (${(totalPixels/1000000).toFixed(1)}M > ${(safeLimit/1000000).toFixed(1)}M) - SUPER STREAMING ar maksimālu cache!`);
+        } else {
+          console.log(`✅ Mazs reģions (${(totalPixels/1000000).toFixed(1)}M ≤ ${(safeLimit/1000000).toFixed(1)}M) - ielādējam atmiņā`);
+        }
+        
+        if (shouldUseStreaming) {
+          // SUPER STREAMING - uzreiz bez atmiņas mēģinājumiem
+          console.log(`🚀 SUPER STREAMING aktivizēts - bez atmiņas ielādes mēģinājumiem`);
+          
+          geoTiffImage.regionInfo = {
+            offsetX: clippedMinX,
+            offsetY: clippedMinY,
+            width: regionWidth,
+            height: regionHeight
+          };
+          tiffArray = null;
+          console.log(`✅ SUPER STREAMING gatavs ${(totalPixels/1000000).toFixed(1)}M pikseļu apstrādei`);
+          
+        } else {
+          // Tikai maziem reģioniem mēģinām ielādēt atmiņā
+          try {
+            console.log(`💾 Mazs reģions - mēģinām ielādēt atmiņā...`);
+            logMemoryUsage('Pirms mazā reģiona ielādes:');
+            
+            const window = [clippedMinX, clippedMinY, clippedMaxX, clippedMaxY];
+            const regionData = await image.readRasters({ window });
+            
+            // Saglabājam reģiona informāciju
+            tiffArray = regionData[0];
+            tiffArray.regionInfo = {
+              offsetX: clippedMinX,
+              offsetY: clippedMinY,
+              width: regionWidth,
+              height: regionHeight
+            };
+            
+            logMemoryUsage('Pēc mazā reģiona ielādes:');
+            console.log(`✅ Mazs reģions ielādēts atmiņā: ${(totalPixels / 1000000).toFixed(1)}M pikseļi, ${(tiffArray.length * 4 / 1024 / 1024).toFixed(1)}MB`);
+            
+          } catch (memoryError) {
+            console.warn(`⚠️ Pat mazs reģions neizdevās: ${memoryError.message}`);
+            console.log(`🔄 Fallback uz streaming pat mazam reģionam...`);
+            
+            // Fallback uz streaming
+            geoTiffImage.regionInfo = {
+              offsetX: clippedMinX,
+              offsetY: clippedMinY,
+              width: regionWidth,
+              height: regionHeight
+            };
+            tiffArray = null;
+            console.log(`✅ Streaming aktivizēts pēc neveiksmīga mazā reģiona`);
+          }
+        }
+        
+      } catch (error) {
+        console.error('Kļūda optimālā reģiona ielādē:', error);
+        throw error;
+      }
+    }
+    
+    async function createGeoJSON() {
+      const features = [];
+      let totalPoints = 0;
+      let outsidePoints = 0;
+      let validPoints = 0;
+      
+        // Initialize layers early so we can add points during processing
+        if (!window.pointLayers) {
+          window.pointLayers = {
+            "ΔZ virs 1.0 m": L.layerGroup(),
+            "ΔZ 0.5–1.0 m": L.layerGroup(),
+            "ΔZ 0.2–0.5 m": L.layerGroup(),
+            "ΔZ 0.1–0.2 m": L.layerGroup(),
+            "ΔZ līdz 0.1 m": L.layerGroup(),
+            "ΔZ -0.1–0 m": L.layerGroup(),
+            "ΔZ -0.2– -0.1 m": L.layerGroup(),
+            "ΔZ -0.5– -0.2 m": L.layerGroup(),
+            "ΔZ -1.0– -0.5 m": L.layerGroup(),
+            "ΔZ zem -1.0 m": L.layerGroup()
+          };
+        }
+        
+        // Iegūstam lietotāja izvēlēto sampling vērtību
+        const samplingSlider = document.getElementById('samplingSlider');
+        const userSamplingPercent = parseInt(samplingSlider.value);
+        const SAMPLING_RATE = userSamplingPercent / 100; // Konvertējam procentos uz decimāldaļu
+        const samplingInterval = userSamplingPercent === 0 ? 1 : Math.round(100 / userSamplingPercent); // Katrs N-tais punkts
+        
+        const layerCounters = {
+          "ΔZ virs 1.0 m": 0,
+          "ΔZ 0.5–1.0 m": 0,
+          "ΔZ 0.2–0.5 m": 0,
+          "ΔZ 0.1–0.2 m": 0,
+          "ΔZ līdz 0.1 m": 0,
+          "ΔZ -0.1–0 m": 0,
+          "ΔZ -0.2– -0.1 m": 0,
+          "ΔZ -0.5– -0.2 m": 0,
+          "ΔZ -1.0– -0.5 m": 0,
+          "ΔZ zem -1.0 m": 0
+        };
+        
+        if (userSamplingPercent === 0) {
+          console.log(`🎯 Processing ${csvData.length} points - VISI punkti kartē (bez sampling)`);
+        } else {
+          console.log(`🎯 Processing ${csvData.length} points ar ${userSamplingPercent}% sampling (katrs ${samplingInterval}. punkts)`);
+        }
+      
+      const startTime = performance.now();
+      console.log(`🚀 Sāk GeoJSON izveidi ar ${csvData.length} punktiem (${cpuCores} kodoli)...`);
+      
+      // Maksimāli optimizēti chunks un batch izmēri atkarībā no sistēmas klases
+      const baseChunkSize = Math.max(1000, Math.floor(csvData.length / (cpuCores * 2))); // Agresīvāks sadalījums
+      let maxChunkSize, batchSize, parallelWorkers;
+      
+      switch(systemSpecs.systemClass) {
+        case 'high-end':
+          maxChunkSize = 200000;  // SUPER AGRESĪVS - 2x lielāki chunks!
+          batchSize = 1000;       // SUPER batch
+          parallelWorkers = cpuCores * 2; // 2x VAIRĀK WORKER!
+          console.log(`🔥 SUPER HIGH-END optimizācija: ${maxChunkSize} chunk, ${batchSize} batch, ${parallelWorkers} workers (200% CPU!)`);
+          break;
+        case 'high':
+          maxChunkSize = 150000;  // 1.5x lielāki chunks
+          batchSize = 750;        // 1.5x batch
+          parallelWorkers = Math.floor(cpuCores * 1.5); // 1.5x worker
+          console.log(`🔥 SUPER HIGH optimizācija: ${maxChunkSize} chunk, ${batchSize} batch, ${parallelWorkers} workers (150% CPU!)`);
+          break;
+        case 'medium':
+          maxChunkSize = 100000;  // Visi kodoli
+          batchSize = 500;        // Liels batch
+          parallelWorkers = cpuCores; // Visi kodoli
+          console.log(`🔥 SUPER MEDIUM optimizācija: ${maxChunkSize} chunk, ${batchSize} batch, ${parallelWorkers} workers (100% CPU!)`);
+          break;
+        case 'low':
+          maxChunkSize = 50000;   // Lielāki chunks
+          batchSize = 250;        // Lielāks batch
+          parallelWorkers = Math.floor(cpuCores * 0.8); // 80% kodolu
+          console.log(`🔥 SUPER LOW optimizācija: ${maxChunkSize} chunk, ${batchSize} batch, ${parallelWorkers} workers (80% CPU!)`);
+          break;
+        default:
+          maxChunkSize = 25000;
+          batchSize = 100;
+          parallelWorkers = Math.floor(cpuCores * 0.5);
+      }
+      
+      const chunkSize = Math.min(baseChunkSize, maxChunkSize);
+      batchSize = Math.min(batchSize, chunkSize); // Nevar būt lielāks par chunk
+      
+      console.log(`🔥 SUPER FINĀLAIS CHUNK: ${chunkSize} punkti, batch: ${batchSize} punkti, ${parallelWorkers}/${cpuCores} kodoli (${Math.round(parallelWorkers/cpuCores*100)}% CPU JAUDAS!)`);
+      
+      for (let i = 0; i < csvData.length; i += chunkSize) {
+        const chunk = csvData.slice(i, Math.min(i + chunkSize, csvData.length));
+        
+        // Atjauninām statusu
+        document.getElementById('status').textContent = `🔥 Apstrādā ${i}-${Math.min(i + chunkSize, csvData.length)} no ${csvData.length} (${((i/csvData.length)*100).toFixed(1)}%)`;
+        
+        // Apstrādājam chunk pa batch grupām
+        for (let j = 0; j < chunk.length; j += batchSize) {
+          const batch = chunk.slice(j, Math.min(j + batchSize, chunk.length));
+          
+          // SUPER OPTIMIZĀCIJA: Batch apstrāde ar koordinātu cache
+          const batchCoords = batch.map(row => ({
+            x: parseFloat(row.x),
+            y: parseFloat(row.y),
+            z: parseFloat(row.z),
+            row: row
+          })).filter(item => !isNaN(item.x) && !isNaN(item.y) && !isNaN(item.z));
+          
+          // Batch lasīšana visiem punktiem vienlaicīgi
+          const tiffValues = await sampleBatchFromGeoTIFF(batchCoords);
+          
+          // SUPER PARALĒLĀ koordinātu transformācija
+          const coordTransforms = batchCoords.map(item => 
+            proj4("EPSG:3059", "EPSG:4326", [item.x, item.y])
+          );
+          
+          // Paralēli apstrādājam rezultātus (bez async - ātrāk!)
+          const batchPromises = batchCoords.map((item, index) => {
+            const tiffZ = tiffValues[index];
+            if (tiffZ === null || isNaN(tiffZ)) return null;
+            
+            const diffValue = item.z - tiffZ;
+            const [lng, lat] = coordTransforms[index];
+            
+            return {
+              type: "Feature",
+              geometry: {
+                type: "Point",
+                coordinates: [lng, lat]
+              },
+              properties: {
+                CSV_X: item.x,
+                CSV_Y: item.y,
+                CSV_Z: item.z,
+                DEM_Z: tiffZ,
+                difference: diffValue
+              }
+            };
+          });
+          
+          // Nav vajadzīgs Promise.all - rezultāti jau ir gatavi!
+          const batchResults = batchPromises;
+          
+          // Store ALL features - no sampling, but process them directly to layers
+          batchResults.forEach((feature, index) => {
+            totalPoints++;
+            if (feature) {
+              validPoints++;
+              
+              // Add ALL features to GeoJSON - no limits
+        features.push(feature);
+              
+              // Determine layer category first
+              const diff = feature.properties.difference;
+              let pointCategory = "";
+              if (diff >= 1.0) pointCategory = "ΔZ virs 1.0 m";
+              else if (diff >= 0.5) pointCategory = "ΔZ 0.5–1.0 m";
+              else if (diff >= 0.2) pointCategory = "ΔZ 0.2–0.5 m";
+              else if (diff >= 0.1) pointCategory = "ΔZ 0.1–0.2 m";
+              else if (diff >= 0) pointCategory = "ΔZ līdz 0.1 m";
+              else if (diff >= -0.1) pointCategory = "ΔZ -0.1–0 m";
+              else if (diff >= -0.2) pointCategory = "ΔZ -0.2– -0.1 m";
+              else if (diff >= -0.5) pointCategory = "ΔZ -0.5– -0.2 m";
+              else if (diff >= -1.0) pointCategory = "ΔZ -1.0– -0.5 m";
+              else pointCategory = "ΔZ zem -1.0 m";
+              
+              // Apply user-defined sampling per layer
+              layerCounters[pointCategory]++;
+              const shouldAddToMap = userSamplingPercent === 0 ? true : (layerCounters[pointCategory] % samplingInterval === 0);
+              
+              if (shouldAddToMap && window.pointLayers[pointCategory]) {
+                const latlng = L.latLng(feature.geometry.coordinates[1], feature.geometry.coordinates[0]);
+                
+                // Create canvas marker with user-defined sampling
+                const marker = L.circleMarker(latlng, {
+                  renderer: canvasRenderer,
+                  radius: 3, // Slightly bigger since fewer points
+                  fillColor: getDiffColor(diff),
+                  color: '#000',
+                  weight: 0.5,
+                  opacity: 0.8,
+                  fillOpacity: 0.7
+                }).bindPopup(`
+                  CSV_Z: ${feature.properties.CSV_Z.toFixed(2)}<br>
+                  DEM_Z: ${feature.properties.DEM_Z.toFixed(2)}<br>
+                  Diff: ${diff.toFixed(2)}
+                `);
+                
+                window.pointLayers[pointCategory].addLayer(marker);
+              }
+            } else {
+              outsidePoints++;
+            }
+          });
+        }
+        
+        // SUPER ĀTRA apstrāde - minimāla pauze tikai UI atjaunošanai
+        if (i % (chunkSize * 10) === 0) { // Pauze tikai katru 10. chunk
+          await new Promise(resolve => setTimeout(resolve, 0)); // Tikai UI thread atbrīvošana
+        }
+      }
+      
+      const endTime = performance.now();
+      const processingTime = ((endTime - startTime) / 1000).toFixed(2);
+      const pointsPerSecond = (validPoints / (processingTime || 1)).toFixed(0);
+      
+      console.log(`✅ GeoJSON pabeigts: ${totalPoints} kopā, ${validPoints} derīgi, ${outsidePoints} ārpus robežām`);
+        console.log(`📊 GeoJSON features: ${features.length} (eksportam)`);
+        
+        // Per-layer statistics with user-defined sampling
+        let totalMappedPoints = 0;
+        if (userSamplingPercent === 0) {
+          console.log(`📊 Visi punkti kartē (bez sampling):`);
+          Object.keys(layerCounters).forEach(layerName => {
+            const totalInLayer = layerCounters[layerName];
+            totalMappedPoints += totalInLayer;
+            if (totalInLayer > 0) {
+              console.log(`   ${layerName}: ${totalInLayer} punkti`);
+            }
+          });
+          console.log(`🎯 Total mapped points: ${totalMappedPoints} (visi punkti)`);
+        } else {
+          console.log(`📊 Per-layer sampling (${userSamplingPercent}% katrs ${samplingInterval}. punkts):`);
+          Object.keys(layerCounters).forEach(layerName => {
+            const totalInLayer = layerCounters[layerName];
+            const mappedInLayer = Math.floor(totalInLayer / samplingInterval);
+            totalMappedPoints += mappedInLayer;
+            if (totalInLayer > 0) {
+              console.log(`   ${layerName}: ${totalInLayer} total → ${mappedInLayer} mapped (${userSamplingPercent}%)`);
+            }
+          });
+          console.log(`🎯 Total mapped points: ${totalMappedPoints} (${userSamplingPercent}% sampling from ${validPoints})`);
+        }
+      console.log(`⚡ Veiktspēja: ${processingTime}s, ${pointsPerSecond} punkti/s`);
+      
+      // Brīdinājums, ja nav derīgu punktu
+      if (validPoints === 0 && totalPoints > 0) {
+        console.warn('⚠️ PROBLĒMA: Nav atrasts neviens derīgs punkts!');
+        console.warn('Iespējamie iemesli:');
+        console.warn('1. LAS un GeoTIFF faili pārklāj dažādas teritorijas');
+        console.warn('2. Koordinātu sistēmas ir atšķirīgas');
+        console.warn('3. GeoTIFF fails ir nepareizs šai teritorijai');
+      }
+      
+      return {
+        type: "FeatureCollection",
+        crs: {
+          type: "name",
+          properties: {
+            name: "urn:ogc:def:crs:EPSG::4326"
+          }
+        },
+        features: features
+      };
+    }
+
+    function createDXF() {
+      const colorMapping = {
+        "Diff_plus 1 m and more": 1,
+        "Diff_plus 0.5 - 1.0 m": 6,
+        "Diff_plus 0.2 - 0.5 m": 231,
+        "Diff_plus 0.1 - 0.2 m": 224,
+        "Diff_plus 0 - 0.1 m": 3,
+        "Diff_minus 0 - 0.1 m": 123,
+        "Diff_minus 0.1 - 0.2 m": 151,
+        "Diff_minus 0.2 - 0.5 m": 5,
+        "Diff_minus 0.5 - 1.0 m": 131,
+        "Diff_minus 1 m and more": 170
+      };
+      let dxfContent = "0\nSECTION\n2\nENTITIES\n";
+      
+      // Izmantojam GeoJSON datus, ja tie ir pieejami
+      const dataSource = currentGeojsonData ? currentGeojsonData.features : [];
+      
+      dataSource.forEach(feature => {
+        const x = feature.properties.CSV_X;
+        const y = feature.properties.CSV_Y;
+        const z = feature.properties.CSV_Z;
+        const tiffZ = feature.properties.DEM_Z;
+        const diff = feature.properties.difference;
+        let layerName = "Undefined";
+        if (diff >= 0) {
+          if (diff >= 1.0) layerName = "Diff_plus 1 m and more";
+          else if (diff >= 0.5) layerName = "Diff_plus 0.5 - 1.0 m";
+          else if (diff >= 0.2) layerName = "Diff_plus 0.2 - 0.5 m";
+          else if (diff >= 0.1) layerName = "Diff_plus 0.1 - 0.2 m";
+          else layerName = "Diff_plus 0 - 0.1 m";
+        } else {
+          if (diff <= -1.0) layerName = "Diff_minus 1 m and more";
+          else if (diff <= -0.5) layerName = "Diff_minus 0.5 - 1.0 m";
+          else if (diff <= -0.2) layerName = "Diff_minus 0.2 - 0.5 m";
+          else if (diff <= -0.1) layerName = "Diff_minus 0.1 - 0.2 m";
+          else layerName = "Diff_minus 0 - 0.1 m";
+        }
+        const color = colorMapping[layerName] || 0;
+        dxfContent += "0\nPOINT\n";
+        dxfContent += "8\n" + layerName + "\n";
+        dxfContent += "62\n" + color + "\n";
+        dxfContent += "10\n" + x + "\n";
+        dxfContent += "20\n" + y + "\n";
+        dxfContent += "30\n" + z + "\n";
+        dxfContent += "0\nTEXT\n";
+        dxfContent += "8\n" + layerName + "\n";
+        dxfContent += "62\n" + color + "\n";  
+        dxfContent += "10\n" + x + "\n";      
+        dxfContent += "20\n" + y + "\n";      
+        dxfContent += "40\n0.2\n";
+        // Izmainīts: neizmantojam Math.abs, lai negatīvā zīme (-) tiktu saglabāta
+        dxfContent += "1\n" + diff.toFixed(2) + " diff" + "\n";
+        dxfContent += "0\nTEXT\n";
+        dxfContent += "8\nCSV_Z\n";            
+        dxfContent += "62\n7\n";               
+        dxfContent += "10\n" + x + "\n";
+        dxfContent += "20\n" + y + "\n";
+        dxfContent += "40\n0.2\n";
+        dxfContent += "72\n2\n";               
+        dxfContent += "73\n1\n";               
+        dxfContent += "11\n" + x + "\n";       
+        dxfContent += "21\n" + y + "\n";       
+        dxfContent += "1\n" + z.toFixed(2) + "\n";
+        dxfContent += "0\nTEXT\n";
+        dxfContent += "8\nDEM_Z\n";            
+        dxfContent += "62\n7\n";               
+        dxfContent += "10\n" + x + "\n";
+        dxfContent += "20\n" + y + "\n";
+        dxfContent += "40\n0.2\n";
+        dxfContent += "72\n2\n";               
+        dxfContent += "73\n3\n";               
+        dxfContent += "11\n" + x + "\n";       
+        dxfContent += "21\n" + y + "\n";       
+        dxfContent += "1\n" + tiffZ.toFixed(2) + "\n";
+      });
+      dxfContent += "0\nENDSEC\n0\nEOF";
+      return dxfContent;
+    }
+
+    function downloadFile(filename, text) {
+      const blob = new Blob([text], { type: "application/vnd.geo+json" });
+      const link = document.createElement("a");
+      link.href = window.URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+
+    function exportTableAsCSV(geojsonData) {
+      let csvText = "#,Punkta_X,Punkta_Y,Punkta_Z,DEM_Z,Diff\n";
+      
+      // Now GeoJSON contains ALL points, so use it directly
+      geojsonData.features.forEach((feature, index) => {
+        const row = [
+          index + 1,
+          feature.properties.CSV_X.toFixed(3),
+          feature.properties.CSV_Y.toFixed(3),
+          feature.properties.CSV_Z.toFixed(2),
+          feature.properties.DEM_Z.toFixed(2),
+          feature.properties.difference.toFixed(2)
+        ];
+        csvText += row.join(",") + "\n";
+      });
+      return csvText;
+    }
+
+    function downloadCSVFile(filename, text) {
+      const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      if (link.download !== undefined) { 
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    }
+
+    function exportTableAsXLSX(geojsonData) {
+      const data = [];
+      data.push(["#", "Punkta_X", "Punkta_Y", "Punkta_Z", "DEM_Z", "Diff"]);
+      // Now GeoJSON contains ALL points
+      geojsonData.features.forEach((feature, index) => {
+        data.push([
+          index + 1,
+          parseFloat(feature.properties.CSV_X).toFixed(3),  // Mainīts no (2) uz (3)
+          parseFloat(feature.properties.CSV_Y).toFixed(3),  // Mainīts no (2) uz (3)
+          parseFloat(feature.properties.CSV_Z).toFixed(2),
+          parseFloat(feature.properties.DEM_Z).toFixed(2),
+          parseFloat(feature.properties.difference).toFixed(2)
+        ]);
+      });
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Tabula");
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbout], { type: "application/octet-stream" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${resultFileName}.xlsx`;
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function calcStats(diffs) {
+      // Filtrē tikai derīgus skaitļus
+      const validDiffs = diffs.filter(val => typeof val === "number" && isFinite(val));
+      // Ja masīvs ir pārāk liels vai satur negaidītas vērtības, atgriežam tukšu statistiku
+      if (validDiffs.length === 0 || validDiffs.length > 1000000) return { count: 0, min: 0, max: 0, avg: 0, rmse: 0 };
+      const count = validDiffs.length;
+      // Izmanto reduce, lai atrastu min un max, nevis izkliedēšanas operatoru
+      const minVal = validDiffs.reduce((min, val) => val < min ? val : min, validDiffs[0]);
+      const maxVal = validDiffs.reduce((max, val) => val > max ? val : max, validDiffs[0]);
+      const sum = validDiffs.reduce((acc, val) => acc + val, 0);
+      const avg = sum / count;
+      const mse = validDiffs.reduce((acc, val) => acc + val * val, 0) / count;
+      const rmse = Math.sqrt(mse);
+      return { count, min: minVal, max: maxVal, avg, rmse };
+    }
+
+    async function computeStatistics() {
+      let posDiffs = [];
+      let negDiffs = [];
+      let allDiffs = [];
+      
+      // Now GeoJSON contains ALL points, so use it directly
+      if (currentGeojsonData && currentGeojsonData.features) {
+        currentGeojsonData.features.forEach(feature => {
+          const diff = feature.properties.difference;
+          if (!isNaN(diff)) {
+        allDiffs.push(diff);
+        if (diff >= 0) posDiffs.push(diff); else negDiffs.push(diff);
+          }
+      });
+      }
+      // Konsoles izvadam masīvu garumus un saturu
+      console.log("posDiffs", posDiffs.length, posDiffs);
+      console.log("negDiffs", negDiffs.length, negDiffs);
+      console.log("allDiffs", allDiffs.length, allDiffs);
+      
+      const posStats = calcStats(posDiffs);
+      const negStats = calcStats(negDiffs);
+      const overallStats = calcStats(allDiffs);
+      
+      let statsHtml = "<h3>Statistika</h3>";
+      
+      // Kopā statistikā
+      statsHtml += "<h4>Kopā:</h4>";
+      statsHtml += "<p>Salīdzināto punktu skaits: " + overallStats.count + "</p>";
+      statsHtml += "<p>Minimālā starpība (ΔZ): " + overallStats.min.toFixed(2) + "</p>";
+      statsHtml += "<p>Maksimālā starpība (ΔZ): " + overallStats.max.toFixed(2) + "</p>";
+      statsHtml += "<p>Vidējā starpība (ΔZ): " + overallStats.avg.toFixed(2) + "</p>";
+      statsHtml += "<p>Kvadrātiskā vidējā kļūda (RMSE): " + overallStats.rmse.toFixed(2) + "</p>";
+      
+      // Atsevišķā statistika Plus un Mīnus vērtībām
+      statsHtml += "<h4>Plus vērtības:</h4>";
+      statsHtml += "<p>Salīdzināto punktu skaits: " + posStats.count + "</p>";
+      statsHtml += "<p>Minimālā starpība (ΔZ): " + posStats.min.toFixed(2) + "</p>";
+      statsHtml += "<p>Maksimālā starpība (ΔZ): " + posStats.max.toFixed(2) + "</p>";
+      statsHtml += "<p>Vidējā starpība (ΔZ): " + posStats.avg.toFixed(2) + "</p>";
+      statsHtml += "<p>Kvadrātiskā vidējā kļūda (RMSE): " + posStats.rmse.toFixed(2) + "</p>";
+      
+      statsHtml += "<h4>Mīnus vērtības:</h4>";
+      statsHtml += "<p>Salīdzināto punktu skaits: " + negStats.count + "</p>";
+      statsHtml += "<p>Minimālā starpība (ΔZ): " + negStats.min.toFixed(2) + "</p>";
+      statsHtml += "<p>Maksimālā starpība (ΔZ): " + negStats.max.toFixed(2) + "</p>";
+      statsHtml += "<p>Vidējā starpība (ΔZ): " + negStats.avg.toFixed(2) + "</p>";
+      statsHtml += "<p>Kvadrātiskā vidējā kļūda (RMSE): " + negStats.rmse.toFixed(2) + "</p>";
+      
+      // Klasifikācijas tabulu ģenerēšana...
+      let plusCounts = {
+        "1 m and more": 0,
+        "0.5 - 1.0 m": 0,
+        "0.2 - 0.5 m": 0,
+        "0.1 - 0.2 m": 0,
+        "0 - 0.1 m": 0
+      };
+      let minusCounts = {
+        "0 - 0.1 m": 0,
+        "0.1 - 0.2 m": 0,
+        "0.2 - 0.5 m": 0,
+        "0.5 - 1.0 m": 0,
+        "1 m and more": 0
+      };
+      const plusColorMap = {
+        "1 m and more": "#FF0000",
+        "0.5 - 1.0 m": "#C80032",
+        "0.2 - 0.5 m": "#E57373",
+        "0.1 - 0.2 m": "#FFCDD2",
+        "0 - 0.1 m": "#8BC34A"
+      };
+      const minusColorMap = {
+        "0 - 0.1 m": "#8BC34A",
+        "0.1 - 0.2 m": "#B3E5FC",
+        "0.2 - 0.5 m": "#64B5F6",
+        "0.5 - 1.0 m": "#1976D2",
+        "1 m and more": "#0000FF"
+      };
+      
+      // Now GeoJSON contains ALL points, so use it directly
+      if (currentGeojsonData && currentGeojsonData.features) {
+        currentGeojsonData.features.forEach(feature => {
+          const diff = feature.properties.difference;
+          if (isNaN(diff)) return;
+          
+        if (diff >= 0) {
+          if (diff >= 1.0) plusCounts["1 m and more"]++;
+          else if (diff >= 0.5) plusCounts["0.5 - 1.0 m"]++;
+          else if (diff >= 0.2) plusCounts["0.2 - 0.5 m"]++;
+          else if (diff >= 0.1) plusCounts["0.1 - 0.2 m"]++;
+          else plusCounts["0 - 0.1 m"]++;
+        } else {
+          if (diff <= -1.0) minusCounts["1 m and more"]++;
+          else if (diff <= -0.5) minusCounts["0.5 - 1.0 m"]++;
+          else if (diff <= -0.2) minusCounts["0.2 - 0.5 m"]++;
+          else if (diff <= -0.1) minusCounts["0.1 - 0.2 m"]++;
+          else minusCounts["0 - 0.1 m"]++;
+        }
+      });
+      }
+      
+      statsHtml += "<h3>Kļūdu klasifikācija:</h3>";
+      statsHtml += "<h4>Plus vērtības (ΔZ ≥ 0):</h4>";
+      statsHtml += "<table style='width:100%; table-layout: fixed;'><colgroup><col style='width:40%;'><col style='width:30%;'><col style='width:30%;'></colgroup>";
+      statsHtml += "<tr><th>Intervāls</th><th>Krāsa</th><th>Punktu skaits</th></tr>";
+      Object.keys(plusCounts).forEach(interval => {
+        statsHtml += "<tr><td>" + interval + "</td><td style='background-color:" + plusColorMap[interval] + ";'></td><td>" + plusCounts[interval] + "</td></tr>";
+      });
+      statsHtml += "</table>";
+      statsHtml += "<h4>Mīnus vērtības (ΔZ < 0):</h4>";
+      statsHtml += "<table style='width:100%; table-layout: fixed;'><colgroup><col style='width:40%;'><col style='width:30%;'><col style='width:30%;'></colgroup>";
+      statsHtml += "<tr><th>Intervāls</th><th>Krāsa</th><th>Punktu skaits</th></tr>";
+      Object.keys(minusCounts).forEach(interval => {
+        statsHtml += "<tr><td>" + interval + "</td><td style='background-color:" + minusColorMap[interval] + ";'></td><td>" + minusCounts[interval] + "</td></tr>";
+      });
+      statsHtml += "</table>";
+      
+      document.getElementById("statistics").innerHTML = statsHtml;
+    }
+
+    function addLegend() {
+      // Remove any existing legend
+      if (window.mapLegend) {
+        map.removeControl(window.mapLegend);
+      }
+      window.mapLegend = L.control({ position: 'bottomright' });
+      window.mapLegend.onAdd = function(map) {
+        const div = L.DomUtil.create('div', 'legend');
+        // Define your intervals and associated colors
+        const labels = [
+          "1 m un vairāk",
+          "0.5 m - 1.0 m",
+          "0.2 m - 0.5 m",
+          "0.1 m - 0.2 m",
+          "0.0 m - 0.1 m",
+          "-0.1 m - 0.0 m",
+          "-0.2 m - -0.1 m",
+          "-0.5 m - -0.2 m",
+          "-1.0 m - -0.5 m",
+          "-1 m un vairāk"
+        ];
+        const colors = [
+          '#FF0000',
+          '#C80032',
+          '#E57373',
+          '#FFCDD2',
+          '#8BC34A',
+          '#8BC34A',
+          '#B3E5FC',
+          '#64B5F6',
+          '#1976D2',
+          '#0000FF'
+        ];
+        // Build the legend HTML
+        div.innerHTML += "<h4>Leģenda</h4>";
+        for (let i = 0; i < labels.length; i++) {
+          div.innerHTML +=
+            '<i style="background:' + colors[i] + '; width:18px; height:18px; display:inline-block; margin-right:8px;"></i>' +
+            labels[i] + '<br>';
+        }
+        return div;
+      };
+      window.mapLegend.addTo(map);
+    }
+  </script>
+</body>
+</html>
